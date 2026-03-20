@@ -1,0 +1,113 @@
+{
+  "projectType": "infrastructure",
+  "projectName": "AWS RDS Terraform Module",
+  "projectDescription": "A Terraform module that creates and manages AWS RDS database instances, subnet groups, parameter groups, option groups, and related monitoring resources.",
+  "theme": "aspen",
+  "primaryColor": "#594ed8",
+  "lightColor": "#acacf4",
+  "darkColor": "#040404",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/engines",
+              "guides/parameter-groups",
+              "guides/option-groups",
+              "guides/subnet-groups",
+              "guides/replicas",
+              "guides/monitoring",
+              "guides/security",
+              "guides/blue-green-deployments"
+            ]
+          },
+          {
+            "group": "Examples",
+            "pages": [
+              "examples/mysql",
+              "examples/postgres",
+              "examples/mssql",
+              "examples/oracle",
+              "examples/replica",
+              "examples/enhanced-monitoring",
+              "examples/s3-import"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "Root Module",
+            "pages": [
+              "reference/inputs",
+              "reference/outputs"
+            ]
+          },
+          {
+            "group": "Submodules",
+            "pages": [
+              "reference/db-instance",
+              "reference/db-subnet-group",
+              "reference/db-parameter-group",
+              "reference/db-option-group",
+              "reference/db-instance-role-association"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Creates and manages AWS RDS DB instances with support for MySQL, PostgreSQL, Oracle, MSSQL, and MariaDB",
+    "Manages DB subnet groups, parameter groups, and option groups as composable submodules",
+    "Supports read replicas and cross-region replication",
+    "Enhanced Monitoring via CloudWatch with automatic IAM role creation",
+    "Blue/Green deployment support for low-downtime upgrades",
+    "Secrets Manager integration for master user password management and rotation",
+    "Performance Insights and CloudWatch log group integration",
+    "Storage encryption with KMS key support and autoscaling"
+  ],
+  "publicApiSurface": [
+    "variable: identifier (required) - The name of the RDS instance",
+    "variable: engine - Database engine (mysql, postgres, oracle-*, sqlserver-*, mariadb)",
+    "variable: engine_version - Engine version string",
+    "variable: instance_class - RDS instance type (e.g. db.t3a.large)",
+    "variable: allocated_storage - Storage size in GB",
+    "variable: db_name - Initial database name",
+    "variable: username - Master DB username",
+    "variable: manage_master_user_password - Delegate password management to Secrets Manager",
+    "variable: vpc_security_group_ids - Security groups to associate",
+    "variable: subnet_ids - VPC subnet IDs for subnet group",
+    "variable: create_db_subnet_group - Toggle subnet group creation",
+    "variable: create_db_parameter_group - Toggle parameter group creation",
+    "variable: create_db_option_group - Toggle option group creation",
+    "variable: create_monitoring_role - Auto-create enhanced monitoring IAM role",
+    "variable: multi_az - Enable Multi-AZ deployment",
+    "variable: replicate_source_db - Source DB identifier for read replica",
+    "variable: blue_green_update - Enable Blue/Green deployment",
+    "variable: parameters - List of DB parameter objects to apply",
+    "variable: options - List of DB option objects to apply",
+    "variable: performance_insights_enabled - Enable Performance Insights",
+    "variable: deletion_protection - Prevent accidental deletion",
+    "output: db_instance_endpoint - Connection endpoint",
+    "output: db_instance_address - Instance address",
+    "output: db_instance_arn - Instance ARN",
+    "output: db_instance_master_user_secret_arn - Secrets Manager ARN for master password",
+    "output: db_subnet_group_id - Subnet group name/ID",
+    "output: db_parameter_group_id - Parameter group ID",
+    "output: db_option_group_id - Option group ID",
+    "output: enhanced_monitoring_iam_role_arn - Monitoring IAM role ARN"
+  ]
+}
