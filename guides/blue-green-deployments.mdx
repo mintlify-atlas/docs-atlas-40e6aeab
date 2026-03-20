@@ -1,0 +1,243 @@
+---
+title: 'Blue/Green deployments'
+description: 'Use RDS Blue/Green deployments for low-downtime major version upgrades and schema changes.'
+---
+
+RDS Blue/Green deployments create a staging environment (green) that mirrors your production database (blue). Changes are applied and tested on the green environment, then traffic is switched over with minimal downtime — typically under one minute.
+
+## When to use Blue/Green deployments
+
+<CardGroup cols={2}>
+  <Card title="Major version upgrades" icon="arrow-up">
+    Upgrade from one major engine version to another (e.g., PostgreSQL 16 to 17, MySQL 8.0 to 8.4) without a multi-hour maintenance window.
+  </Card>
+  <Card title="Schema changes" icon="table">
+    Apply DDL changes to large tables while the current version serves traffic, then switch over when replication catches up.
+  </Card>
+  <Card title="Instance class changes" icon="server">
+    Resize to a larger or smaller instance class with a short cutover window instead of a full instance replacement.
+  </Card>
+  <Card title="Parameter group changes" icon="sliders">
+    Test new parameter values on the green environment before applying them to production.
+  </Card>
+</CardGroup>
+
+## Variable
+
+| Variable | Type | Default | Description |
+|---|---|---|---|
+| `blue_green_update` | `object({ enabled = optional(bool) })` | `null` | Enable Blue/Green deployment support on the instance. |
+
+## Limitations
+
+- `manage_master_user_password` is not supported when Blue/Green is enabled. Use `password_wo` and `password_wo_version` instead.
+- Backup retention must be at least `1` day. The module automatically coerces `backup_retention_period` to `1` when `blue_green_update` is set.
+- Not all engine versions and regions support Blue/Green deployments. Check the AWS documentation for the supported matrix.
+- The Blue/Green deployment itself (initiating, testing, and switching over) is managed through the AWS console, CLI, or SDK — Terraform only enables the feature on the instance.
+
+## Deployment workflow
+
+<Steps>
+  <Step title="Enable Blue/Green on the instance">
+    Add `blue_green_update = { enabled = true }` to your module block and apply:
+
+    ```hcl
+    module "db" {
+      source = "terraform-aws-modules/rds/aws"
+
+      identifier = "my-db"
+
+      engine         = "mysql"
+      engine_version = "8.0.43"
+      # ...
+
+      blue_green_update = {
+        enabled = true
+      }
+
+      # manage_master_user_password not supported with blue/green
+      manage_master_user_password = false
+      password_wo                 = "UberSecretPassword"
+      password_wo_version         = 1
+    }
+    ```
+  </Step>
+
+  <Step title="Create the Blue/Green deployment in AWS">
+    Use the AWS console or CLI to create a Blue/Green deployment. AWS clones the production (blue) instance into a staging (green) environment and sets up replication between them.
+
+    ```bash
+    aws rds create-blue-green-deployment \
+      --blue-green-deployment-name my-upgrade \
+      --source arn:aws:rds:eu-west-1:123456789012:db:my-db \
+      --target-engine-version "8.4"
+    ```
+  </Step>
+
+  <Step title="Apply and validate changes on the green environment">
+    With the green environment running, apply your schema changes, update parameters, or let it run under test load. Monitor replication lag to ensure the green instance stays in sync.
+  </Step>
+
+  <Step title="Switch over">
+    When you are ready, initiate the switchover. AWS promotes the green instance to primary and redirects the existing DNS endpoint. The old blue instance becomes the new standby.
+
+    ```bash
+    aws rds switchover-blue-green-deployment \
+      --blue-green-deployment-identifier bgd-1234567890abcdef0
+    ```
+  </Step>
+
+  <Step title="Update Terraform configuration to match the new version">
+    After switchover, update `engine_version` (and `family` / `major_engine_version` if the major version changed) in your Terraform configuration so that the state matches reality:
+
+    ```hcl
+    module "db" {
+      source = "terraform-aws-modules/rds/aws"
+
+      identifier = "my-db"
+
+      engine         = "mysql"
+      engine_version = "8.4"   # updated
+      family         = "mysql8.4"  # updated
+      # ...
+    }
+    ```
+
+    Run `terraform plan` to verify no unintended changes.
+  </Step>
+
+  <Step title="Delete the Blue/Green deployment">
+    Once you have validated the switchover, delete the Blue/Green deployment resource to stop paying for the standby clone.
+
+    ```bash
+    aws rds delete-blue-green-deployment \
+      --blue-green-deployment-identifier bgd-1234567890abcdef0 \
+      --delete-target
+    ```
+  </Step>
+</Steps>
+
+## Full example
+
+The following examples are taken from `examples/blue-green-deployment/main.tf`.
+
+### PostgreSQL with Blue/Green
+
+```hcl
+module "postgres" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = "blue-green-example-postgres"
+
+  # All blue/green compatible versions:
+  # https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.RDS_Fea_Regions_DB-eng.Feature.BlueGreenDeployments.html
+  engine               = "postgres"
+  engine_version       = "17.6"
+  family               = "postgres17" # DB parameter group
+  major_engine_version = "17"         # DB option group
+  instance_class       = "db.t4g.large"
+
+  allocated_storage     = 20
+  max_allocated_storage = 100
+
+  # NOTE: Do NOT use 'user' as the value for 'username'
+  db_name  = "blueGreenExamplePostgresql"
+  username = "blue_green_example_postgresql"
+  port     = 5432
+
+  multi_az               = true
+  db_subnet_group_name   = module.vpc.database_subnet_group
+  vpc_security_group_ids = [module.postgres_security_group.security_group_id]
+
+  maintenance_window              = "Mon:00:00-Mon:03:00"
+  backup_window                   = "03:00-06:00"
+  enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
+  create_cloudwatch_log_group     = true
+
+  blue_green_update = {
+    enabled = true
+  }
+
+  password_wo         = "UberSecretPassword"
+  password_wo_version = 1
+  # Not supported with blue/green deployment
+  manage_master_user_password = false
+
+  backup_retention_period = 1
+  skip_final_snapshot     = true
+  deletion_protection     = false
+
+  parameters = [
+    # required for blue-green deployment
+    {
+      name         = "rds.logical_replication"
+      value        = 1
+      apply_method = "pending-reboot"
+    }
+  ]
+
+  tags = local.tags
+}
+```
+
+### MySQL with Blue/Green
+
+```hcl
+module "mysql" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = "blue-green-example-mysql"
+
+  engine               = "mysql"
+  engine_version       = "8.0.43"
+  family               = "mysql8.0" # DB parameter group
+  major_engine_version = "8.0"      # DB option group
+  instance_class       = "db.t4g.large"
+
+  allocated_storage     = 20
+  max_allocated_storage = 100
+
+  db_name  = "blueGreenExampleMysql"
+  username = "blue_green_example_mysql"
+  port     = 3306
+
+  password_wo         = "UberSecretPassword"
+  password_wo_version = 1
+  # Not supported with blue/green deployment
+  manage_master_user_password = false
+
+  multi_az               = true
+  db_subnet_group_name   = module.vpc.database_subnet_group
+  vpc_security_group_ids = [module.mysql_security_group.security_group_id]
+
+  maintenance_window              = "Mon:00:00-Mon:03:00"
+  backup_window                   = "03:00-06:00"
+  enabled_cloudwatch_logs_exports = ["general"]
+  create_cloudwatch_log_group     = true
+
+  blue_green_update = {
+    enabled = true
+  }
+
+  skip_final_snapshot = true
+  deletion_protection = false
+
+  tags = local.tags
+}
+```
+
+## PostgreSQL logical replication requirement
+
+PostgreSQL Blue/Green deployments require logical replication to be enabled. Add this to your `parameters`:
+
+```hcl
+parameters = [
+  {
+    name         = "rds.logical_replication"
+    value        = 1
+    apply_method = "pending-reboot"
+  }
+]
+```
+
+You will need to reboot the instance after applying this parameter before creating the Blue/Green deployment.

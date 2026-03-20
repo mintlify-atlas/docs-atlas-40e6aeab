@@ -1,0 +1,231 @@
+---
+title: 'Parameter groups'
+description: 'Create, use, or bypass DB parameter groups to tune engine settings for your RDS instances.'
+---
+
+A DB parameter group acts as a container for engine configuration values that apply to all instances associated with that group. Common use cases include setting character encodings, adjusting connection limits, tuning autovacuum behavior in PostgreSQL, and enabling slow query logs.
+
+By default, this module creates a parameter group automatically. You can also reference an existing parameter group or fall back to the AWS-managed default.
+
+## Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `create_db_parameter_group` | `true` | Whether to create a parameter group. Set to `false` to use an existing one or the AWS default. |
+| `parameter_group_name` | `null` | Name of the parameter group to create or reference. Defaults to the instance `identifier`. |
+| `parameter_group_use_name_prefix` | `true` | When `true`, appends a unique suffix to the name to avoid conflicts. Set to `false` to use the exact name. |
+| `family` | `null` | The parameter group family. Required when creating a new parameter group (e.g., `mysql8.0`, `postgres17`). |
+| `parameters` | `null` | List of parameter objects to apply. |
+| `parameter_group_description` | `null` | Description for the parameter group. |
+| `parameter_group_skip_destroy` | `null` | When `true`, removes the parameter group from state on destroy without deleting it from AWS. |
+
+## The `parameters` object
+
+Each entry in `parameters` accepts the following fields, as defined in `variables.tf`:
+
+```hcl
+parameters = [
+  {
+    name         = string           # Parameter name (required)
+    value        = string           # Parameter value (required)
+    apply_method = optional(string) # "immediate" or "pending-reboot" (optional)
+  }
+]
+```
+
+When `apply_method` is omitted, AWS uses the default for that parameter (usually `immediate` for dynamic parameters and `pending-reboot` for static ones).
+
+## Usage patterns
+
+<Tabs>
+  <Tab title="Create new">
+    The module creates a parameter group by default. Provide `family` and `parameters` to configure it:
+
+    ```hcl
+    module "db" {
+      source = "terraform-aws-modules/rds/aws"
+
+      identifier = "demodb"
+
+      engine            = "mysql"
+      engine_version    = "8.0"
+      instance_class    = "db.t4g.large"
+      allocated_storage = 20
+
+      # Parameter group
+      family = "mysql8.0"
+
+      parameters = [
+        {
+          name  = "character_set_client"
+          value = "utf8mb4"
+        },
+        {
+          name  = "character_set_server"
+          value = "utf8mb4"
+        }
+      ]
+
+      # ... other required variables
+    }
+    ```
+
+    To use an exact name instead of a generated prefix:
+
+    ```hcl
+    parameter_group_name            = "prod-instance-mysql-8.0"
+    parameter_group_use_name_prefix = false
+    ```
+
+    To use a prefix (the default):
+
+    ```hcl
+    parameter_group_name = "prod-instance-mysql-8.0"
+    # parameter_group_use_name_prefix = true (default)
+    ```
+
+    AWS will create a parameter group named something like `prod-instance-mysql-8.0-20240101120000000000000001`.
+  </Tab>
+
+  <Tab title="Use existing">
+    To reference a parameter group created outside the module, set `create_db_parameter_group = false` and provide its name:
+
+    ```hcl
+    module "db" {
+      source = "terraform-aws-modules/rds/aws"
+
+      identifier = "demodb"
+
+      engine            = "mysql"
+      engine_version    = "8.0"
+      instance_class    = "db.t4g.large"
+      allocated_storage = 20
+
+      # Reference existing parameter group
+      create_db_parameter_group = false
+      parameter_group_name      = "prod-instance-mysql-8.0" # must already exist in AWS
+
+      # family and parameters are not used when create_db_parameter_group = false
+
+      # ... other required variables
+    }
+    ```
+  </Tab>
+
+  <Tab title="AWS default">
+    To use the AWS-managed default parameter group (no custom parameters), disable parameter group creation and omit the name:
+
+    ```hcl
+    module "db" {
+      source = "terraform-aws-modules/rds/aws"
+
+      identifier = "demodb"
+
+      engine            = "mysql"
+      engine_version    = "8.0"
+      instance_class    = "db.t4g.large"
+      allocated_storage = 20
+
+      # Use the AWS default parameter group
+      create_db_parameter_group = false
+
+      # ... other required variables
+    }
+    ```
+
+    This is what the `complete-mysql` example does for the `db_default` module variant:
+
+    ```hcl
+    module "db_default" {
+      source = "../../"
+
+      identifier = "${local.name}-default"
+
+      create_db_option_group    = false
+      create_db_parameter_group = false
+
+      engine               = "mysql"
+      engine_version       = "8.0"
+      family               = "mysql8.0"
+      major_engine_version = "8.0"
+      instance_class       = "db.t4g.large"
+
+      allocated_storage = 200
+
+      db_name  = "completeMysql"
+      username = "complete_mysql"
+      port     = 3306
+
+      db_subnet_group_name   = module.vpc.database_subnet_group
+      vpc_security_group_ids = [module.security_group.security_group_id]
+
+      maintenance_window = "Mon:00:00-Mon:03:00"
+      backup_window      = "03:00-06:00"
+
+      backup_retention_period = 0
+
+      tags = local.tags
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## PostgreSQL example
+
+For PostgreSQL, the family format is `postgres{major_version}`:
+
+```hcl
+module "db" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = "complete-postgresql"
+
+  engine         = "postgres"
+  engine_version = "17"
+  family         = "postgres17"
+  instance_class = "db.t4g.large"
+
+  parameters = [
+    {
+      name  = "autovacuum"
+      value = 1
+    },
+    {
+      name  = "client_encoding"
+      value = "utf8"
+    }
+  ]
+
+  # ... other required variables
+}
+```
+
+## Blue/green deployment parameter example
+
+Some parameters require `apply_method = "pending-reboot"`. For example, enabling logical replication in PostgreSQL for blue/green deployments:
+
+```hcl
+parameters = [
+  {
+    name         = "rds.logical_replication"
+    value        = 1
+    apply_method = "pending-reboot"
+  }
+]
+```
+
+## Family naming reference
+
+| Engine | Family pattern | Example |
+|---|---|---|
+| MySQL | `mysql{major}.{minor}` | `mysql8.0`, `mysql8.4` |
+| MariaDB | `mariadb{major}.{minor}` | `mariadb10.6` |
+| PostgreSQL | `postgres{major}` | `postgres14`, `postgres17` |
+| Oracle EE | `oracle-ee-{major}` | `oracle-ee-19` |
+| Oracle SE2 | `oracle-se2-{major}` | `oracle-se2-19` |
+| SQL Server EX | `sqlserver-ex-{major}.{minor}` | `sqlserver-ex-15.0` |
+| SQL Server SE | `sqlserver-se-{major}.{minor}` | `sqlserver-se-15.0` |
+
+<Tip>
+  Set `parameter_group_skip_destroy = true` in production to prevent accidental deletion of a parameter group that is associated with multiple instances. The parameter group will be removed from Terraform state but remain in AWS.
+</Tip>

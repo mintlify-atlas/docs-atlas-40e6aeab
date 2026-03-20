@@ -1,0 +1,146 @@
+---
+title: "db_parameter_group submodule"
+description: "Reference for the db_parameter_group submodule, which provisions an aws_db_parameter_group resource."
+---
+
+The `db_parameter_group` submodule creates an `aws_db_parameter_group` for a specific engine family. Parameter groups let you manage database engine settings across one or more DB instances.
+
+## Source
+
+```
+./modules/db_parameter_group
+```
+
+## Usage
+
+Use this submodule standalone when you want to share a parameter group across multiple DB instances or manage parameters outside the lifecycle of a single DB instance:
+
+```hcl
+module "db_parameter_group" {
+  source  = "terraform-aws-modules/rds/aws//modules/db_parameter_group"
+  version = "~> 6.0"
+
+  name            = "mysql80-production"
+  use_name_prefix = false
+  description     = "MySQL 8.0 parameter group for production workloads"
+  family          = "mysql8.0"
+
+  parameters = [
+    {
+      name  = "character_set_client"
+      value = "utf8mb4"
+    },
+    {
+      name  = "character_set_server"
+      value = "utf8mb4"
+    },
+    {
+      name         = "max_connections"
+      value        = "500"
+      apply_method = "immediate"
+    },
+    {
+      name         = "innodb_buffer_pool_size"
+      value        = "{DBInstanceClassMemory*3/4}"
+      apply_method = "pending-reboot"
+    },
+  ]
+
+  tags = {
+    Environment = "production"
+  }
+}
+```
+
+Then reference the output in a DB instance:
+
+```hcl
+module "db" {
+  source  = "terraform-aws-modules/rds/aws"
+  version = "~> 6.0"
+
+  identifier                = "mydb"
+  create_db_parameter_group = false
+  parameter_group_name      = module.db_parameter_group.db_parameter_group_id
+
+  # ... other variables
+}
+```
+
+## Input variables
+
+<ParamField path="create" type="bool">
+  Whether to create the parameter group resource.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="name" type="string">
+  The name of the DB parameter group. When `use_name_prefix` is `true`, this is used as a prefix.
+
+  Default: `""`
+</ParamField>
+
+<ParamField path="use_name_prefix" type="bool">
+  Determines whether to use `name` as-is or create a unique name beginning with `name` as the prefix.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="description" type="string">
+  The description of the DB parameter group.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="family" type="string">
+  The engine family for the parameter group (e.g. `mysql8.0`, `postgres15`, `oracle-se2-19`). This must match the engine version of the DB instance.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="parameters" type="list(object)">
+  A list of DB parameters to apply to the parameter group.
+
+  Default: `null`
+
+  <Expandable title="Object schema">
+    <ParamField path="name" type="string" required>
+      The name of the DB parameter (e.g. `max_connections`).
+    </ParamField>
+    <ParamField path="value" type="string" required>
+      The value of the parameter. May use engine formula expressions such as `{DBInstanceClassMemory*3/4}`.
+    </ParamField>
+    <ParamField path="apply_method" type="string">
+      When to apply the parameter. Valid values: `immediate`, `pending-reboot`. Defaults to `immediate`.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="skip_destroy" type="bool">
+  Set to `true` to prevent the parameter group from being deleted at destroy time. The resource is instead just removed from Terraform state.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="region" type="string">
+  Region where the parameter group will be managed. Defaults to the region set in the provider configuration.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="tags" type="map(string)">
+  A mapping of tags to assign to the DB parameter group resource.
+
+  Default: `{}`
+</ParamField>
+
+## Outputs
+
+<ResponseField name="db_parameter_group_id" type="string">
+  The name (ID) of the DB parameter group. Pass this to the `parameter_group_name` input of a DB instance.
+</ResponseField>
+
+<ResponseField name="db_parameter_group_arn" type="string">
+  The ARN of the DB parameter group.
+</ResponseField>

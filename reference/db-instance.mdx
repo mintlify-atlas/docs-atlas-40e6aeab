@@ -1,0 +1,747 @@
+---
+title: "db_instance submodule"
+description: "Reference for the db_instance submodule — the core resource module that provisions the aws_db_instance and supporting resources."
+---
+
+The `db_instance` submodule is the core of the terraform-aws-rds module. It provisions the `aws_db_instance` resource along with the Enhanced Monitoring IAM role, CloudWatch log groups, and Secrets Manager password rotation. The root module wraps this submodule and coordinates it with the subnet group, parameter group, and option group submodules.
+
+## Source
+
+```
+./modules/db_instance
+```
+
+## Usage
+
+To use this submodule directly:
+
+```hcl
+module "db_instance" {
+  source  = "terraform-aws-modules/rds/aws//modules/db_instance"
+  version = "~> 6.0"
+
+  identifier    = "mydb"
+  engine        = "postgres"
+  engine_version = "15.4"
+  instance_class = "db.t3.micro"
+  allocated_storage = 20
+
+  db_name  = "myapp"
+  username = "dbadmin"
+  password_wo = var.db_password
+  password_wo_version = 1
+  manage_master_user_password = false
+
+  db_subnet_group_name   = module.db_subnet_group.db_subnet_group_id
+  parameter_group_name   = module.db_parameter_group.db_parameter_group_id
+  vpc_security_group_ids = [aws_security_group.rds.id]
+
+  tags = {
+    Environment = "production"
+  }
+}
+```
+
+<Info>
+  In most cases, use the root module (`terraform-aws-modules/rds/aws`) rather than this submodule directly. The root module creates and wires together the subnet group, parameter group, and option group automatically.
+</Info>
+
+## Input variables
+
+<AccordionGroup>
+
+<Accordion title="Resource control">
+
+<ParamField path="create" type="bool">
+  Whether to create the DB instance and all associated resources. Set to `false` to skip all resource creation.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="region" type="string">
+  Region where this resource will be managed. Defaults to the region set in the provider configuration.
+
+  Default: `null`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Instance">
+
+<ParamField path="identifier" type="string" required>
+  The name of the RDS instance.
+</ParamField>
+
+<ParamField path="use_identifier_prefix" type="bool">
+  Determines whether to use `identifier` as-is or create a unique identifier beginning with `identifier` as the specified prefix.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="engine" type="string">
+  The database engine to use. Not required when `replicate_source_db` is set.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="engine_version" type="string">
+  The engine version to use.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="engine_lifecycle_support" type="string">
+  The life cycle type for this DB instance. Applies only to RDS for MySQL and RDS for PostgreSQL. Valid values: `open-source-rds-extended-support`, `open-source-rds-extended-support-disabled`.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="instance_class" type="string">
+  The instance type of the RDS instance (e.g. `db.t3.micro`, `db.r6g.large`).
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="allocated_storage" type="number">
+  The allocated storage in gigabytes.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="storage_type" type="string">
+  One of `standard`, `gp2`, `gp3`, or `io1`. Defaults to `io1` if `iops` is specified, `gp2` otherwise.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="storage_encrypted" type="bool">
+  Specifies whether the DB instance is encrypted.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="kms_key_id" type="string">
+  The ARN for the KMS encryption key.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="max_allocated_storage" type="number">
+  Enables Storage Autoscaling when set to a value greater than `allocated_storage`. Set to `0` to disable.
+
+  Default: `0`
+</ParamField>
+
+<ParamField path="storage_throughput" type="number">
+  Storage throughput for `gp3` storage type.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="iops" type="number">
+  The amount of provisioned IOPS. Requires `storage_type` of `io1` or `gp3`.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="dedicated_log_volume" type="bool">
+  Use a dedicated log volume (DLV) for the DB instance. Requires Provisioned IOPS.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="custom_iam_instance_profile" type="string">
+  RDS custom IAM instance profile name.
+
+  Default: `null`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Database credentials">
+
+<ParamField path="db_name" type="string">
+  The DB name to create. If omitted, no database is created initially.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="username" type="string">
+  Username for the master DB user. Ignored when `replicate_source_db` is set.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="password_wo" type="string">
+  Write-only, ephemeral password for the master DB user. Not used when `manage_master_user_password` is `true` or `replicate_source_db` is set.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="password_wo_version" type="number">
+  Version counter for `password_wo`. Increment to trigger a password update.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="manage_master_user_password" type="bool">
+  Set to `true` to let RDS manage the master user password via Secrets Manager.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="master_user_secret_kms_key_id" type="string">
+  KMS key ARN/ID/alias for encrypting the Secrets Manager secret.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="port" type="string">
+  The port on which the DB accepts connections.
+
+  Default: `null`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Network">
+
+<ParamField path="vpc_security_group_ids" type="list(string)">
+  List of VPC security group IDs to associate.
+
+  Default: `[]`
+</ParamField>
+
+<ParamField path="db_subnet_group_name" type="string">
+  Name of the DB subnet group for the instance.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="parameter_group_name" type="string">
+  Name of the DB parameter group to associate.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="option_group_name" type="string">
+  Name of the DB option group to associate.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="publicly_accessible" type="bool">
+  Bool to control if instance is publicly accessible.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="multi_az" type="bool">
+  Specifies if the RDS instance is multi-AZ.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="availability_zone" type="string">
+  The Availability Zone of the RDS instance.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="network_type" type="string">
+  The type of network stack to use. Valid values: `IPV4`, `DUAL`.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="customer_owned_ip_enabled" type="bool">
+  Indicates whether to enable a customer-owned IP address (CoIP) for an RDS on Outposts DB instance.
+
+  Default: `null`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Backup & Recovery">
+
+<ParamField path="backup_retention_period" type="number">
+  The days to retain backups for.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="backup_window" type="string">
+  The daily time range (UTC) during which automated backups are created.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="copy_tags_to_snapshot" type="bool">
+  On delete, copy all Instance tags to the final snapshot.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="skip_final_snapshot" type="bool">
+  If `true`, no final snapshot is created on deletion.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="final_snapshot_identifier_prefix" type="string">
+  Prefix for the final snapshot identifier.
+
+  Default: `"final"`
+</ParamField>
+
+<ParamField path="delete_automated_backups" type="bool">
+  Specifies whether to remove automated backups immediately after the DB instance is deleted.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="snapshot_identifier" type="string">
+  Snapshot ID from which to create the DB instance.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="restore_to_point_in_time" type="object">
+  Restore to a point in time. MySQL is not supported. See [inputs reference](/reference/inputs) for the full object schema.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="s3_import" type="object">
+  Restore from a Percona Xtrabackup in S3. Only MySQL is supported. See [inputs reference](/reference/inputs) for the full object schema.
+
+  Default: `null`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Maintenance">
+
+<ParamField path="maintenance_window" type="string">
+  The window to perform maintenance in.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="apply_immediately" type="bool">
+  Apply database modifications immediately rather than during the next maintenance window.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="allow_major_version_upgrade" type="bool">
+  Allow major engine version upgrades.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="auto_minor_version_upgrade" type="bool">
+  Automatically apply minor engine upgrades during the maintenance window.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="blue_green_update" type="object">
+  Enable low-downtime updates using RDS Blue/Green deployments.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="upgrade_storage_config" type="bool">
+  Upgrade the storage file system configuration on the read replica.
+
+  Default: `null`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Monitoring">
+
+<ParamField path="monitoring_interval" type="number">
+  Enhanced Monitoring collection interval in seconds. Valid values: `0`, `1`, `5`, `10`, `15`, `30`, `60`. Use `0` to disable.
+
+  Default: `0`
+</ParamField>
+
+<ParamField path="monitoring_role_arn" type="string">
+  ARN of the IAM role for Enhanced Monitoring. Required when `monitoring_interval > 0` and `create_monitoring_role = false`.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="monitoring_role_name" type="string">
+  Name of the IAM role to create for Enhanced Monitoring.
+
+  Default: `"rds-monitoring-role"`
+</ParamField>
+
+<ParamField path="monitoring_role_use_name_prefix" type="bool">
+  Use `monitoring_role_name` as a prefix instead of an exact name.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="monitoring_role_description" type="string">
+  Description of the monitoring IAM role.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="create_monitoring_role" type="bool">
+  Create an IAM role for Enhanced Monitoring.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="monitoring_role_permissions_boundary" type="string">
+  ARN of the permissions boundary policy for the monitoring IAM role.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="performance_insights_enabled" type="bool">
+  Enable Performance Insights.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="performance_insights_retention_period" type="number">
+  Days to retain Performance Insights data. Valid values: `7`, `731`, or a multiple of `31`.
+
+  Default: `7`
+</ParamField>
+
+<ParamField path="performance_insights_kms_key_id" type="string">
+  KMS key ARN for encrypting Performance Insights data.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="database_insights_mode" type="string">
+  Database Insights mode. Valid values: `standard`, `advanced`.
+
+  Default: `null`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="CloudWatch Logs">
+
+<ParamField path="enabled_cloudwatch_logs_exports" type="list(string)">
+  Log types to export to CloudWatch Logs.
+
+  Default: `[]`
+</ParamField>
+
+<ParamField path="create_cloudwatch_log_group" type="bool">
+  Create CloudWatch log groups for each export type. Not created when `use_identifier_prefix` is `true`.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="cloudwatch_log_group_retention_in_days" type="number">
+  Days to retain CloudWatch logs.
+
+  Default: `7`
+</ParamField>
+
+<ParamField path="cloudwatch_log_group_kms_key_id" type="string">
+  KMS key ARN for encrypting CloudWatch log data.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="cloudwatch_log_group_skip_destroy" type="bool">
+  Preserve log groups on destroy.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="cloudwatch_log_group_class" type="string">
+  Log group class. Valid values: `STANDARD`, `INFREQUENT_ACCESS`.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="cloudwatch_log_group_tags" type="map(string)">
+  Additional tags for the CloudWatch log group(s).
+
+  Default: `{}`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Authentication — Password Rotation">
+
+<ParamField path="manage_master_user_password_rotation" type="bool">
+  Manage master user password rotation via Secrets Manager. Requires `manage_master_user_password = true`.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="master_user_password_rotate_immediately" type="bool">
+  Rotate the secret immediately on next apply.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="master_user_password_rotation_automatically_after_days" type="number">
+  Days between automatic rotations.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="master_user_password_rotation_duration" type="string">
+  Length of the rotation window in hours (e.g. `3h`).
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="master_user_password_rotation_schedule_expression" type="string">
+  `cron()` or `rate()` expression for the rotation schedule.
+
+  Default: `null`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Active Directory">
+
+<ParamField path="domain" type="string">
+  ID of the Directory Service Active Directory domain.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="domain_auth_secret_arn" type="string">
+  ARN of the Secrets Manager secret with Active Directory credentials.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="domain_dns_ips" type="list(string)">
+  IPv4 DNS IPs of Active Directory domain controllers.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="domain_fqdn" type="string">
+  FQDN of the self-managed Active Directory domain.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="domain_iam_role_name" type="string">
+  Name of the IAM role for Directory Service API calls.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="domain_ou" type="string">
+  Active Directory organizational unit for the DB instance.
+
+  Default: `null`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Replicas">
+
+<ParamField path="replicate_source_db" type="string">
+  Identifier of the source DB instance to replicate.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="replica_mode" type="string">
+  Oracle replica mode. Valid values: `mounted`, `open-read-only`.
+
+  Default: `null`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Database settings">
+
+<ParamField path="character_set_name" type="string">
+  Character set name for Oracle instances. Cannot be changed after creation.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="nchar_character_set_name" type="string">
+  National character set for Oracle NCHAR/NVARCHAR2/NCLOB columns. Cannot be changed after creation.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="timezone" type="string">
+  DB instance timezone. Only supported by Microsoft SQL Server.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="license_model" type="string">
+  License model for the DB instance. Required for some engines.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="iam_database_authentication_enabled" type="bool">
+  Enable IAM database authentication.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="deletion_protection" type="bool">
+  Prevent the instance from being deleted.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="ca_cert_identifier" type="string">
+  Identifier of the CA certificate for the DB instance.
+
+  Default: `null`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Tags & Timeouts">
+
+<ParamField path="tags" type="map(string)">
+  Tags to assign to all resources.
+
+  Default: `{}`
+</ParamField>
+
+<ParamField path="db_instance_tags" type="map(string)">
+  Additional tags for the DB instance only.
+
+  Default: `{}`
+</ParamField>
+
+<ParamField path="timeouts" type="object">
+  Terraform resource management timeouts for `aws_db_instance`. Supports `create`, `update`, and `delete` keys with duration strings (e.g. `40m`).
+
+  Default: `null`
+</ParamField>
+
+</Accordion>
+
+</AccordionGroup>
+
+## Outputs
+
+<ResponseField name="db_instance_address" type="string">
+  The hostname of the RDS instance.
+</ResponseField>
+
+<ResponseField name="db_instance_arn" type="string">
+  The ARN of the RDS instance.
+</ResponseField>
+
+<ResponseField name="db_instance_availability_zone" type="string">
+  The Availability Zone of the RDS instance.
+</ResponseField>
+
+<ResponseField name="db_instance_endpoint" type="string">
+  The connection endpoint in `address:port` format.
+</ResponseField>
+
+<ResponseField name="db_listener_endpoint" type="object">
+  The listener connection endpoint for SQL Server Always On.
+</ResponseField>
+
+<ResponseField name="db_instance_engine" type="string">
+  The database engine.
+</ResponseField>
+
+<ResponseField name="db_instance_engine_version_actual" type="string">
+  The running version of the database engine.
+</ResponseField>
+
+<ResponseField name="db_instance_hosted_zone_id" type="string">
+  The canonical hosted zone ID of the DB instance.
+</ResponseField>
+
+<ResponseField name="db_instance_identifier" type="string">
+  The RDS instance identifier.
+</ResponseField>
+
+<ResponseField name="db_instance_resource_id" type="string">
+  The RDS Resource ID of this instance.
+</ResponseField>
+
+<ResponseField name="db_instance_status" type="string">
+  The RDS instance status.
+</ResponseField>
+
+<ResponseField name="db_instance_name" type="string">
+  The database name.
+</ResponseField>
+
+<ResponseField name="db_instance_username" type="string">
+  The master username for the database. Sensitive.
+</ResponseField>
+
+<ResponseField name="db_instance_port" type="number">
+  The database port.
+</ResponseField>
+
+<ResponseField name="db_instance_ca_cert_identifier" type="string">
+  The CA certificate identifier.
+</ResponseField>
+
+<ResponseField name="db_instance_domain" type="string">
+  The ID of the Active Directory domain the instance is joined to.
+</ResponseField>
+
+<ResponseField name="db_instance_domain_auth_secret_arn" type="string">
+  The ARN of the Active Directory credentials secret.
+</ResponseField>
+
+<ResponseField name="db_instance_domain_dns_ips" type="list(string)">
+  The DNS IP addresses of the Active Directory domain controllers.
+</ResponseField>
+
+<ResponseField name="db_instance_domain_fqdn" type="string">
+  The FQDN of the Active Directory domain.
+</ResponseField>
+
+<ResponseField name="db_instance_domain_iam_role_name" type="string">
+  The IAM role name used for Directory Service API calls.
+</ResponseField>
+
+<ResponseField name="db_instance_domain_ou" type="string">
+  The Active Directory organizational unit the instance joined.
+</ResponseField>
+
+<ResponseField name="db_instance_master_user_secret_arn" type="string">
+  The ARN of the Secrets Manager secret for the master user password.
+</ResponseField>
+
+<ResponseField name="db_instance_upgrade_rollout_order" type="string">
+  The upgrade rollout order for the instance.
+</ResponseField>
+
+<ResponseField name="db_instance_cloudwatch_log_groups" type="map(object)">
+  Map of CloudWatch log groups created for the DB instance.
+</ResponseField>
+
+<ResponseField name="db_instance_secretsmanager_secret_rotation_enabled" type="bool">
+  Whether automatic Secrets Manager rotation is enabled.
+</ResponseField>
+
+<ResponseField name="enhanced_monitoring_iam_role_name" type="string">
+  The name of the Enhanced Monitoring IAM role.
+</ResponseField>
+
+<ResponseField name="enhanced_monitoring_iam_role_arn" type="string">
+  The ARN of the Enhanced Monitoring IAM role.
+</ResponseField>

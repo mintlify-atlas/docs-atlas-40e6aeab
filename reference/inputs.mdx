@@ -1,0 +1,835 @@
+---
+title: "Input variables"
+description: "Complete reference for all input variables accepted by the terraform-aws-rds root module."
+---
+
+The root module (`terraform-aws-modules/rds/aws`) accepts the following input variables. Only `identifier` is required; all other variables have defaults.
+
+<AccordionGroup>
+
+<Accordion title="Instance">
+
+<ParamField path="identifier" type="string" required>
+  The name of the RDS instance. Used as the base name for all related resources.
+</ParamField>
+
+<ParamField path="instance_use_identifier_prefix" type="bool">
+  Determines whether to use `identifier` as-is or create a unique identifier beginning with `identifier` as the specified prefix.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="engine" type="string">
+  The database engine to use (e.g. `mysql`, `postgres`, `oracle-se2`, `sqlserver-ex`).
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="engine_version" type="string">
+  The engine version to use (e.g. `8.0.35`, `15.4`).
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="engine_lifecycle_support" type="string">
+  The life cycle type for this DB instance. Applies only to RDS for MySQL and RDS for PostgreSQL. Valid values: `open-source-rds-extended-support`, `open-source-rds-extended-support-disabled`. AWS default is `open-source-rds-extended-support`.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="instance_class" type="string">
+  The instance type of the RDS instance (e.g. `db.t3.micro`, `db.r6g.large`).
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="allocated_storage" type="number">
+  The allocated storage in gigabytes.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="storage_type" type="string">
+  One of `standard` (magnetic), `gp2` (general purpose SSD), `gp3` (new generation of general purpose SSD), or `io1` (provisioned IOPS SSD). The default is `io1` if `iops` is specified, `gp2` if not. If you specify `io1` or `gp3`, you must also include a value for the `iops` parameter.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="storage_encrypted" type="bool">
+  Specifies whether the DB instance is encrypted.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="kms_key_id" type="string">
+  The ARN for the KMS encryption key. If creating an encrypted replica, set this to the destination KMS ARN. If `storage_encrypted` is set to `true` and `kms_key_id` is not specified, the default KMS key created in your account will be used. Use the full ARN, not a key alias.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="max_allocated_storage" type="number">
+  Specifies the value for Storage Autoscaling. Set to a value greater than `allocated_storage` to enable autoscaling. Set to `0` to disable.
+
+  Default: `0`
+</ParamField>
+
+<ParamField path="storage_throughput" type="number">
+  Storage throughput value for the DB instance. See notes for limitations regarding this variable for `gp3`.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="iops" type="number">
+  The amount of provisioned IOPS. Setting this implies a `storage_type` of `io1` or `gp3`. See notes for limitations regarding this variable for `gp3`.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="dedicated_log_volume" type="bool">
+  Use a dedicated log volume (DLV) for the DB instance. Requires Provisioned IOPS.
+
+  Default: `false`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Database">
+
+<ParamField path="db_name" type="string">
+  The DB name to create. If omitted, no database is created initially.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="username" type="string">
+  Username for the master DB user.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="password_wo" type="string">
+  Write-only password for the master DB user. Required unless `manage_master_user_password` is set to `true`, or `snapshot_identifier` / `replicate_source_db` is provided. This is a sensitive, ephemeral variable — it will not be stored in Terraform state.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="password_wo_version" type="number">
+  Used together with `password_wo` to trigger an update. Increment this value when a password change is required.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="port" type="string">
+  The port on which the DB accepts connections. Defaults to the engine default if not specified.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="character_set_name" type="string">
+  The character set name to use for DB encoding in Oracle instances. Cannot be changed after creation. See Oracle Character Sets Supported in Amazon RDS and Collations and Character Sets for Microsoft SQL Server for more information.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="nchar_character_set_name" type="string">
+  The national character set used in the NCHAR, NVARCHAR2, and NCLOB data types for Oracle instances. Cannot be changed after creation.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="timezone" type="string">
+  Time zone of the DB instance. Currently only supported by Microsoft SQL Server. Can only be set on creation.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="license_model" type="string">
+  License model information for this DB instance. Optional, but required for some DB engines (e.g. `Oracle SE1`). Valid values: `license-included`, `bring-your-own-license`, `general-public-license`.
+
+  Default: `null`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Authentication">
+
+<ParamField path="manage_master_user_password" type="bool">
+  Set to `true` to allow RDS to manage the master user password in Secrets Manager. Cannot be set if `password_wo` is provided.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="master_user_secret_kms_key_id" type="string">
+  The key ARN, key ID, alias ARN, or alias name for the KMS key to encrypt the master user password secret in Secrets Manager. If not specified, the default KMS key for your AWS account is used.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="manage_master_user_password_rotation" type="bool">
+  Whether to manage the master user password rotation. By default, rotation is managed by RDS on creation. Setting this value to `false` after previously having been set to `true` will disable automatic rotation.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="master_user_password_rotate_immediately" type="bool">
+  Specifies whether to rotate the secret immediately or wait until the next scheduled rotation window.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="master_user_password_rotation_automatically_after_days" type="number">
+  Specifies the number of days between automatic scheduled rotations of the secret. Either `automatically_after_days` or `schedule_expression` must be specified.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="master_user_password_rotation_duration" type="string">
+  The length of the rotation window in hours (e.g. `3h` for a three-hour window).
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="master_user_password_rotation_schedule_expression" type="string">
+  A `cron()` or `rate()` expression that defines the schedule for rotating your secret. Either `automatically_after_days` or `schedule_expression` must be specified.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="iam_database_authentication_enabled" type="bool">
+  Specifies whether IAM database authentication is enabled, which allows IAM users and roles to authenticate to the DB instance.
+
+  Default: `false`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Network">
+
+<ParamField path="vpc_security_group_ids" type="list(string)">
+  List of VPC security group IDs to associate with the DB instance.
+
+  Default: `[]`
+</ParamField>
+
+<ParamField path="publicly_accessible" type="bool">
+  Bool to control if instance is publicly accessible. When `false`, the instance can only be accessed from within the VPC.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="multi_az" type="bool">
+  Specifies if the RDS instance is multi-AZ. Enables high availability with an automatic failover standby in a different Availability Zone.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="availability_zone" type="string">
+  The Availability Zone of the RDS instance. Cannot be set when `multi_az` is `true`.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="network_type" type="string">
+  The type of network stack to use. Valid values: `IPV4`, `DUAL`.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="customer_owned_ip_enabled" type="bool">
+  Indicates whether to enable a customer-owned IP address (CoIP) for an RDS on Outposts DB instance.
+
+  Default: `null`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Subnet Group">
+
+<ParamField path="create_db_subnet_group" type="bool">
+  Whether to create a database subnet group. If `false`, `db_subnet_group_name` must reference an existing subnet group.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="db_subnet_group_name" type="string">
+  Name of the DB subnet group. The DB instance will be created in the VPC associated with this group. If unspecified, the instance will be created in the default VPC.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="db_subnet_group_use_name_prefix" type="bool">
+  Determines whether to use `db_subnet_group_name` as-is or create a unique name beginning with `db_subnet_group_name` as the prefix.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="db_subnet_group_description" type="string">
+  Description of the DB subnet group to create.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="subnet_ids" type="list(string)">
+  A list of VPC subnet IDs to use when creating the DB subnet group.
+
+  Default: `[]`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Parameter Group">
+
+<ParamField path="create_db_parameter_group" type="bool">
+  Whether to create a database parameter group.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="parameter_group_name" type="string">
+  Name of the DB parameter group to associate or create.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="parameter_group_use_name_prefix" type="bool">
+  Determines whether to use `parameter_group_name` as-is or create a unique name beginning with `parameter_group_name` as the prefix.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="parameter_group_description" type="string">
+  Description of the DB parameter group to create.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="family" type="string">
+  The family of the DB parameter group (e.g. `mysql8.0`, `postgres15`).
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="parameters" type="list(object)">
+  A list of DB parameters to apply to the parameter group.
+
+  Default: `null`
+
+  <Expandable title="Object schema">
+    <ParamField path="name" type="string" required>
+      The name of the DB parameter.
+    </ParamField>
+    <ParamField path="value" type="string" required>
+      The value of the DB parameter.
+    </ParamField>
+    <ParamField path="apply_method" type="string">
+      When to apply the parameter. Valid values: `immediate`, `pending-reboot`. Default is `immediate`.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="parameter_group_skip_destroy" type="bool">
+  Set to `true` if you do not wish the parameter group to be deleted at destroy time. The parameter group is instead removed from Terraform state only.
+
+  Default: `null`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Option Group">
+
+<ParamField path="create_db_option_group" type="bool">
+  Whether to create a database option group.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="option_group_name" type="string">
+  Name of the option group to associate or create.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="option_group_use_name_prefix" type="bool">
+  Determines whether to use `option_group_name` as-is or create a unique name beginning with `option_group_name` as the prefix.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="option_group_description" type="string">
+  The description of the option group.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="major_engine_version" type="string">
+  Specifies the major version of the engine that this option group should be associated with (e.g. `8.0`, `15`).
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="options" type="list(object)">
+  A list of options to apply to the option group.
+
+  Default: `null`
+
+  <Expandable title="Object schema">
+    <ParamField path="option_name" type="string" required>
+      The name of the option (e.g. `MARIADB_AUDIT_PLUGIN`).
+    </ParamField>
+    <ParamField path="port" type="number">
+      The port number used by the option.
+    </ParamField>
+    <ParamField path="version" type="string">
+      The version of the option.
+    </ParamField>
+    <ParamField path="db_security_group_memberships" type="list(string)">
+      A list of DB security groups to apply the option to.
+    </ParamField>
+    <ParamField path="vpc_security_group_memberships" type="list(string)">
+      A list of VPC security group IDs to apply the option to.
+    </ParamField>
+    <ParamField path="option_settings" type="list(object)">
+      A list of key-value option settings.
+      <Expandable title="option_settings schema">
+        <ParamField path="name" type="string" required>Setting name.</ParamField>
+        <ParamField path="value" type="string" required>Setting value.</ParamField>
+      </Expandable>
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="option_group_skip_destroy" type="bool">
+  Set to `true` if you do not wish the option group to be deleted at destroy time. The option group is instead removed from Terraform state only.
+
+  Default: `null`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Backup & Recovery">
+
+<ParamField path="backup_retention_period" type="number">
+  The number of days to retain automated backups. Must be between 0 and 35. Set to `0` to disable automated backups.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="backup_window" type="string">
+  The daily time range (in UTC) during which automated backups are created if they are enabled. Format: `HH:MM-HH:MM` (e.g. `09:46-10:16`). Must not overlap with `maintenance_window`.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="copy_tags_to_snapshot" type="bool">
+  On delete, copy all instance tags to the final snapshot.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="skip_final_snapshot" type="bool">
+  Determines whether a final DB snapshot is created before the DB instance is deleted. If `true`, no snapshot is created.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="final_snapshot_identifier_prefix" type="string">
+  The prefix for the final snapshot identifier on cluster destroy. The full identifier will be `{prefix}-{identifier}-{random_hex}`.
+
+  Default: `"final"`
+</ParamField>
+
+<ParamField path="delete_automated_backups" type="bool">
+  Specifies whether to remove automated backups immediately after the DB instance is deleted.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="snapshot_identifier" type="string">
+  Specifies whether or not to create this database from a snapshot. This correlates to the snapshot ID shown in the RDS console (e.g. `rds:production-2015-06-26-06-05`).
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="restore_to_point_in_time" type="object">
+  Restore to a point in time. MySQL is **not** supported.
+
+  Default: `null`
+
+  <Expandable title="Object schema">
+    <ParamField path="restore_time" type="string">
+      The date and time to restore from in UTC format (e.g. `2023-01-01T00:00:00Z`).
+    </ParamField>
+    <ParamField path="source_db_instance_automated_backups_arn" type="string">
+      ARN of the automated backup from which to restore.
+    </ParamField>
+    <ParamField path="source_db_instance_identifier" type="string">
+      Identifier of the source DB instance from which to restore.
+    </ParamField>
+    <ParamField path="source_dbi_resource_id" type="string">
+      The resource ID of the source DB instance.
+    </ParamField>
+    <ParamField path="use_latest_restorable_time" type="bool">
+      Whether to restore to the latest restorable time. Conflicts with `restore_time`.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="s3_import" type="object">
+  Restore from a Percona Xtrabackup stored in S3. Only MySQL is supported.
+
+  Default: `null`
+
+  <Expandable title="Object schema">
+    <ParamField path="source_engine_version" type="string" required>
+      The version of the MySQL database in the S3 backup.
+    </ParamField>
+    <ParamField path="bucket_name" type="string" required>
+      The name of the S3 bucket containing the backup.
+    </ParamField>
+    <ParamField path="bucket_prefix" type="string">
+      The key prefix for the S3 bucket. If not specified, the entire bucket is used.
+    </ParamField>
+    <ParamField path="ingestion_role" type="string" required>
+      The ARN of the IAM role with access to the S3 bucket.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Maintenance">
+
+<ParamField path="maintenance_window" type="string">
+  The window to perform maintenance in. Format: `ddd:hh24:mi-ddd:hh24:mi` (e.g. `Mon:00:00-Mon:03:00`).
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="apply_immediately" type="bool">
+  Specifies whether any database modifications are applied immediately or during the next maintenance window.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="allow_major_version_upgrade" type="bool">
+  Indicates that major version upgrades are allowed. Changing this parameter does not result in an outage.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="auto_minor_version_upgrade" type="bool">
+  Indicates that minor engine upgrades will be applied automatically during the maintenance window.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="blue_green_update" type="object">
+  Enables low-downtime updates using RDS Blue/Green deployments. When enabled, `backup_retention_period` must be at least `1`.
+
+  Default: `null`
+
+  <Expandable title="Object schema">
+    <ParamField path="enabled" type="bool">
+      Whether to enable Blue/Green deployments for updates.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="upgrade_storage_config" type="bool">
+  Whether to upgrade the storage file system configuration on the read replica. Can only be set with `replicate_source_db`.
+
+  Default: `null`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Monitoring">
+
+<ParamField path="monitoring_interval" type="number">
+  The interval in seconds between points when Enhanced Monitoring metrics are collected for the DB instance. To disable, specify `0`. Valid values: `0`, `1`, `5`, `10`, `15`, `30`, `60`.
+
+  Default: `0`
+</ParamField>
+
+<ParamField path="monitoring_role_arn" type="string">
+  The ARN for the IAM role that permits RDS to send enhanced monitoring metrics to CloudWatch Logs. Must be specified if `monitoring_interval` is non-zero and `create_monitoring_role` is `false`.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="monitoring_role_name" type="string">
+  Name of the IAM role which will be created when `create_monitoring_role` is enabled.
+
+  Default: `"rds-monitoring-role"`
+</ParamField>
+
+<ParamField path="monitoring_role_use_name_prefix" type="bool">
+  Determines whether to use `monitoring_role_name` as-is or create a unique identifier beginning with `monitoring_role_name` as the prefix.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="monitoring_role_description" type="string">
+  Description of the monitoring IAM role.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="create_monitoring_role" type="bool">
+  Create an IAM role with a defined name that permits RDS to send enhanced monitoring metrics to CloudWatch Logs.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="monitoring_role_permissions_boundary" type="string">
+  ARN of the policy used to set the permissions boundary for the monitoring IAM role.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="performance_insights_enabled" type="bool">
+  Specifies whether Performance Insights are enabled.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="performance_insights_retention_period" type="number">
+  The amount of time in days to retain Performance Insights data. Valid values: `7`, `731` (2 years), or a multiple of `31`.
+
+  Default: `7`
+</ParamField>
+
+<ParamField path="performance_insights_kms_key_id" type="string">
+  The ARN for the KMS key to encrypt Performance Insights data.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="database_insights_mode" type="string">
+  The mode of Database Insights enabled for the instance. Valid values: `standard`, `advanced`.
+
+  Default: `null`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="CloudWatch Logs">
+
+<ParamField path="enabled_cloudwatch_logs_exports" type="list(string)">
+  List of log types to export to CloudWatch Logs. Valid values depend on the engine: `alert`, `audit`, `error`, `general`, `listener`, `slowquery`, `trace`, `postgresql` (PostgreSQL only), `upgrade` (PostgreSQL only).
+
+  Default: `[]`
+</ParamField>
+
+<ParamField path="create_cloudwatch_log_group" type="bool">
+  Determines whether a CloudWatch log group is created for each entry in `enabled_cloudwatch_logs_exports`. Log groups are not created when using an identifier prefix.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="cloudwatch_log_group_retention_in_days" type="number">
+  The number of days to retain CloudWatch logs for the DB instance.
+
+  Default: `7`
+</ParamField>
+
+<ParamField path="cloudwatch_log_group_kms_key_id" type="string">
+  The ARN of the KMS key to use when encrypting CloudWatch log data.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="cloudwatch_log_group_skip_destroy" type="bool">
+  Set to `true` if you do not wish the log group (and any logs it may contain) to be deleted at destroy time. The log group is instead removed from Terraform state only.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="cloudwatch_log_group_class" type="string">
+  The log class of the log group. Possible values: `STANDARD`, `INFREQUENT_ACCESS`.
+
+  Default: `null`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Security">
+
+<ParamField path="deletion_protection" type="bool">
+  The database cannot be deleted when this value is set to `true`. To delete the instance, set this to `false` and apply before destroying.
+
+  Default: `false`
+</ParamField>
+
+<ParamField path="ca_cert_identifier" type="string">
+  Specifies the identifier of the CA certificate for the DB instance (e.g. `rds-ca-rsa2048-g1`).
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="custom_iam_instance_profile" type="string">
+  RDS custom IAM instance profile name.
+
+  Default: `null`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Active Directory">
+
+<ParamField path="domain" type="string">
+  The ID of the Directory Service Active Directory domain to create the instance in (e.g. `d-1234567890`). Conflicts with `domain_fqdn` and `domain_auth_secret_arn`.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="domain_auth_secret_arn" type="string">
+  The ARN for the Secrets Manager secret with the self-managed Active Directory credentials for the user joining the domain. Required if `domain_fqdn` is provided. Conflicts with `domain` and `domain_iam_role_name`.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="domain_dns_ips" type="list(string)">
+  The IPv4 DNS IP addresses of your primary and secondary self-managed Active Directory domain controllers. Two IP addresses must be provided. Required if `domain_fqdn` is provided. Conflicts with `domain` and `domain_iam_role_name`.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="domain_fqdn" type="string">
+  The fully qualified domain name (FQDN) of the self-managed Active Directory domain. Conflicts with `domain` and `domain_iam_role_name`.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="domain_iam_role_name" type="string">
+  The name of the IAM role to be used when making API calls to the Directory Service. Required if `domain` is provided.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="domain_ou" type="string">
+  The self-managed Active Directory organizational unit for the DB instance to join. Required if `domain_fqdn` is provided. Conflicts with `domain` and `domain_iam_role_name`.
+
+  Default: `null`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Replicas">
+
+<ParamField path="replicate_source_db" type="string">
+  Specifies that this resource is a read replica, and designates the source DB instance identifier to replicate from. When set, many configuration values are inherited from the source instance.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="replica_mode" type="string">
+  Specifies whether the replica is in `mounted` or `open-read-only` mode. Only supported by Oracle instances.
+
+  Default: `null`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Role Association">
+
+<ParamField path="db_instance_role_associations" type="map(string)">
+  A map of DB instance supported feature names to IAM role ARNs. The module creates one `aws_db_instance_role_association` resource for each map entry.
+
+  Default: `{}`
+
+  **Example:**
+  ```hcl
+  db_instance_role_associations = {
+    s3_integration = "arn:aws:iam::123456789012:role/rds-s3-integration-role"
+  }
+  ```
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Tags">
+
+<ParamField path="tags" type="map(string)">
+  A mapping of tags to assign to all resources created by this module.
+
+  Default: `{}`
+</ParamField>
+
+<ParamField path="db_instance_tags" type="map(string)">
+  Additional tags for the DB instance only. Merged with `tags`.
+
+  Default: `{}`
+</ParamField>
+
+<ParamField path="db_subnet_group_tags" type="map(string)">
+  Additional tags for the DB subnet group only. Merged with `tags`.
+
+  Default: `{}`
+</ParamField>
+
+<ParamField path="db_parameter_group_tags" type="map(string)">
+  Additional tags for the DB parameter group only. Merged with `tags`.
+
+  Default: `{}`
+</ParamField>
+
+<ParamField path="db_option_group_tags" type="map(string)">
+  Additional tags for the DB option group only. Merged with `tags`.
+
+  Default: `{}`
+</ParamField>
+
+<ParamField path="cloudwatch_log_group_tags" type="map(string)">
+  Additional tags for the CloudWatch log group(s) only. Merged with `tags`.
+
+  Default: `{}`
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Timeouts">
+
+<ParamField path="timeouts" type="object">
+  Updated Terraform resource management timeouts for `aws_db_instance`. Use to permit longer resource management times for slow operations.
+
+  Default: `null`
+
+  <Expandable title="Object schema">
+    <ParamField path="create" type="string">
+      Timeout for creating the DB instance (e.g. `40m`).
+    </ParamField>
+    <ParamField path="update" type="string">
+      Timeout for updating the DB instance (e.g. `80m`).
+    </ParamField>
+    <ParamField path="delete" type="string">
+      Timeout for deleting the DB instance (e.g. `60m`).
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="option_group_timeouts" type="object">
+  Define the maximum timeout for deletion of the `aws_db_option_group` resource.
+
+  Default: `null`
+
+  <Expandable title="Object schema">
+    <ParamField path="delete" type="string">
+      Timeout for deleting the option group (e.g. `15m`).
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+</Accordion>
+
+<Accordion title="Region">
+
+<ParamField path="region" type="string">
+  Region where this resource will be managed. Defaults to the region set in the provider configuration. Useful for multi-region deployments.
+
+  Default: `null`
+</ParamField>
+
+</Accordion>
+
+</AccordionGroup>

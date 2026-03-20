@@ -1,0 +1,133 @@
+---
+title: 'Subnet groups'
+description: 'Create or reference a DB subnet group to control which VPC subnets your RDS instance can use.'
+---
+
+A DB subnet group is a collection of subnets that RDS can use when creating a DB instance inside a VPC. AWS requires that a subnet group spans at least two Availability Zones (AZs). Without a subnet group, RDS places the instance in the default VPC.
+
+<Note>
+  The module defaults to `create_db_subnet_group = false`. In most cases you will either create a subnet group through a VPC module (like `terraform-aws-modules/vpc/aws`) and pass its name via `db_subnet_group_name`, or set `create_db_subnet_group = true` and provide `subnet_ids`.
+</Note>
+
+## Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `create_db_subnet_group` | `false` | Whether to create a DB subnet group. |
+| `db_subnet_group_name` | `null` | Name of the subnet group to create or reference. When creating, defaults to the instance `identifier`. |
+| `db_subnet_group_use_name_prefix` | `true` | When `true`, appends a unique suffix to the name. Set to `false` to use the exact name. |
+| `subnet_ids` | `[]` | List of VPC subnet IDs to include. Required when `create_db_subnet_group = true`. |
+| `db_subnet_group_description` | `null` | Description for the subnet group. |
+| `db_subnet_group_tags` | `{}` | Additional tags to apply to the subnet group resource. |
+
+## Setup
+
+<Steps>
+  <Step title="Identify private subnets across multiple AZs">
+    RDS instances should always be placed in private subnets — not public subnets. Ensure your VPC has at least two private subnets in different AZs. Most production deployments use three AZs for resilience.
+
+    If you are using the `terraform-aws-modules/vpc/aws` module, it creates a `database_subnet_group` output that you can reference directly:
+
+    ```hcl
+    module "vpc" {
+      source  = "terraform-aws-modules/vpc/aws"
+      version = "~> 6.0"
+
+      name = "my-vpc"
+      cidr = "10.0.0.0/16"
+
+      azs              = ["eu-west-1a", "eu-west-1b", "eu-west-1c"]
+      database_subnets = ["10.0.6.0/24", "10.0.7.0/24", "10.0.8.0/24"]
+
+      create_database_subnet_group = true
+    }
+    ```
+  </Step>
+
+  <Step title="Pass the subnet group to the RDS module">
+    Reference the VPC-created subnet group by name:
+
+    ```hcl
+    module "db" {
+      source = "terraform-aws-modules/rds/aws"
+
+      identifier = "my-db"
+
+      # Reference the subnet group from the VPC module
+      # create_db_subnet_group is false (default) — not creating one here
+      db_subnet_group_name = module.vpc.database_subnet_group
+
+      engine         = "mysql"
+      engine_version = "8.0"
+      instance_class = "db.t4g.large"
+      # ... other required variables
+    }
+    ```
+  </Step>
+
+  <Step title="Or create a subnet group within the module">
+    If you have subnet IDs but no pre-created subnet group, let the module create it:
+
+    ```hcl
+    module "db" {
+      source = "terraform-aws-modules/rds/aws"
+
+      identifier = "my-db"
+
+      # Create a subnet group
+      create_db_subnet_group = true
+      subnet_ids             = ["subnet-12345678", "subnet-87654321", "subnet-abcdef01"]
+
+      engine         = "mysql"
+      engine_version = "8.0"
+      instance_class = "db.t4g.large"
+      # ... other required variables
+    }
+    ```
+
+    The subnet group name defaults to the `identifier` value with a generated suffix (because `db_subnet_group_use_name_prefix = true` by default).
+
+    To use a specific name:
+
+    ```hcl
+    create_db_subnet_group          = true
+    db_subnet_group_name            = "production-rds-subnets"
+    db_subnet_group_use_name_prefix = false
+    subnet_ids                      = ["subnet-12345678", "subnet-87654321"]
+    ```
+  </Step>
+</Steps>
+
+## Use existing subnet group
+
+If a subnet group already exists in AWS and is not managed by this module:
+
+```hcl
+module "db" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = "my-db"
+
+  # create_db_subnet_group = false (default)
+  db_subnet_group_name = "existing-subnet-group-name"
+
+  # ... other required variables
+}
+```
+
+## Best practices
+
+<CardGroup cols={2}>
+  <Card title="Use private subnets" icon="lock">
+    Never place RDS instances in public subnets. Use dedicated database subnets that have no route to an internet gateway.
+  </Card>
+  <Card title="Span multiple AZs" icon="arrows-split">
+    Include subnets from at least two Availability Zones. For Multi-AZ deployments, AWS needs to place the standby replica in a different AZ.
+  </Card>
+  <Card title="Separate database subnets" icon="database">
+    Use dedicated database subnets rather than reusing your application's private subnets. This allows independent routing and network ACL control.
+  </Card>
+  <Card title="Tag consistently" icon="tag">
+    Use `db_subnet_group_tags` to add environment or team tags separate from the global `tags` variable.
+  </Card>
+</CardGroup>

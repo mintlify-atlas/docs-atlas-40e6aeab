@@ -1,0 +1,270 @@
+---
+title: 'Security'
+description: 'Configure encryption, IAM authentication, password management, deletion protection, and Active Directory integration for RDS instances.'
+---
+
+This guide covers the security controls available in the module: storage encryption, IAM database authentication, master password management (including Secrets Manager rotation), write-only passwords, deletion protection, and Active Directory integration.
+
+## Storage encryption
+
+<Note>
+  `storage_encrypted` defaults to `true`. All new instances are encrypted by default. You must explicitly set `storage_encrypted = false` to disable encryption — for example, SQL Server Express edition does not support encryption.
+</Note>
+
+| Variable | Default | Description |
+|---|---|---|
+| `storage_encrypted` | `true` | Whether to encrypt the DB instance. |
+| `kms_key_id` | `null` | ARN of the KMS key to use for encryption. If omitted and `storage_encrypted = true`, AWS uses the default `aws/rds` key. Use the full ARN, not an alias. |
+
+```hcl
+module "db" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = "my-db"
+
+  # Encryption (true by default — shown here for clarity)
+  storage_encrypted = true
+  kms_key_id        = "arn:aws:kms:eu-west-1:123456789012:key/mrk-1234abcd..."
+
+  # ... other variables
+}
+```
+
+## Master password management
+
+<Note>
+  `manage_master_user_password` defaults to `true`. RDS manages the master password in AWS Secrets Manager automatically. The secret ARN is available in the `db_instance_master_user_secret_arn` output.
+</Note>
+
+When `manage_master_user_password = true`:
+- RDS stores the password in Secrets Manager.
+- Rotation is handled by RDS (default schedule).
+- You do not provide `password_wo`.
+- Replicas and blue/green deployments do not support this — set it to `false` for those cases.
+
+### Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `manage_master_user_password` | `true` | Let RDS manage the master password in Secrets Manager. |
+| `master_user_secret_kms_key_id` | `null` | KMS key ARN, ID, alias ARN, or alias name for encrypting the Secrets Manager secret. |
+
+```hcl
+module "db" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = "my-db"
+
+  # manage_master_user_password = true (default)
+  # Access the secret ARN via: module.db.db_instance_master_user_secret_arn
+
+  master_user_secret_kms_key_id = "arn:aws:kms:eu-west-1:123456789012:key/mrk-..."
+
+  # ... other variables
+}
+```
+
+## Password rotation
+
+You can configure the rotation schedule explicitly using `manage_master_user_password_rotation`. This controls a separate `aws_secretsmanager_secret_rotation` resource.
+
+| Variable | Default | Description |
+|---|---|---|
+| `manage_master_user_password_rotation` | `false` | Whether to manage rotation configuration. When `false` on first apply, RDS handles rotation. Setting to `false` after previously `true` disables rotation. |
+| `master_user_password_rotate_immediately` | `null` | Rotate the secret immediately on apply, rather than waiting for the next window. |
+| `master_user_password_rotation_automatically_after_days` | `null` | Days between automatic rotations. Mutually exclusive with `schedule_expression`. |
+| `master_user_password_rotation_duration` | `null` | Duration of the rotation window in hours (e.g., `"3h"`). |
+| `master_user_password_rotation_schedule_expression` | `null` | `cron()` or `rate()` expression for the rotation schedule. Mutually exclusive with `automatically_after_days`. |
+
+The complete-postgres example configures a custom rotation schedule:
+
+```hcl
+module "db" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = "complete-postgresql"
+
+  engine         = "postgres"
+  engine_version = "17"
+  # ...
+
+  # Setting manage_master_user_password_rotation to false after it
+  # has previously been set to true disables automatic rotation.
+  # However using an initial value of false (default) does not disable
+  # automatic rotation — rotation will be handled by RDS.
+  manage_master_user_password_rotation              = true
+  master_user_password_rotate_immediately           = false
+  master_user_password_rotation_schedule_expression = "rate(15 days)"
+}
+```
+
+## Write-only passwords
+
+As an alternative to Secrets Manager, you can provide the password directly using the write-only `password_wo` variable. This is required when `manage_master_user_password = false` and no `snapshot_identifier` or `replicate_source_db` is provided.
+
+| Variable | Default | Description |
+|---|---|---|
+| `password_wo` | `null` | Write-only password for the master DB user. Ephemeral — not stored in state. |
+| `password_wo_version` | `null` | Increment this number to trigger a password change. |
+
+```hcl
+module "db" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = "my-db"
+
+  manage_master_user_password = false
+  password_wo                 = var.db_password  # sourced from a variable or secrets backend
+  password_wo_version         = 1
+
+  # ... other variables
+}
+```
+
+To rotate the password, update `password_wo` and increment `password_wo_version`.
+
+<Note>
+  `password_wo` is declared as `ephemeral = true` in the module, meaning it is not persisted in Terraform state. Blue/green deployments and replicas must use `manage_master_user_password = false` with a write-only password.
+</Note>
+
+## IAM database authentication
+
+IAM database authentication allows you to use IAM users and roles to authenticate to MySQL and PostgreSQL without a password. RDS verifies identity using an AWS-signed authentication token.
+
+| Variable | Default | Description |
+|---|---|---|
+| `iam_database_authentication_enabled` | `false` | Enable IAM authentication for the DB instance. |
+
+```hcl
+module "db" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = "my-db"
+
+  iam_database_authentication_enabled = true
+
+  # ... other variables
+}
+```
+
+## Deletion protection
+
+Deletion protection prevents the RDS instance from being deleted via the AWS console, CLI, or Terraform until the protection is removed. The default is `false` but production deployments should set this to `true`.
+
+| Variable | Default | Description |
+|---|---|---|
+| `deletion_protection` | `false` | Prevent deletion of the DB instance. |
+
+```hcl
+module "db" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = "prod-db"
+
+  deletion_protection = true
+
+  # ... other variables
+}
+```
+
+## VPC and public accessibility
+
+<Warning>
+  `publicly_accessible` defaults to `false`. RDS instances are private by default. Do not set this to `true` unless you specifically require public access and have implemented compensating controls such as VPC security groups and SSL enforcement.
+</Warning>
+
+| Variable | Default | Description |
+|---|---|---|
+| `vpc_security_group_ids` | `[]` | List of VPC security group IDs to associate with the instance. |
+| `publicly_accessible` | `false` | Whether the instance is accessible from the internet. |
+
+```hcl
+module "db" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = "my-db"
+
+  vpc_security_group_ids = [module.security_group.security_group_id]
+  publicly_accessible    = false  # default — shown for clarity
+
+  # ... other variables
+}
+```
+
+## Active Directory authentication
+
+You can join an RDS instance to an AWS Directory Service (Managed Microsoft AD) domain to enable Windows Authentication. This is primarily used with SQL Server.
+
+### AWS Managed Active Directory (legacy approach)
+
+Use `domain` and `domain_iam_role_name` together:
+
+| Variable | Description |
+|---|---|
+| `domain` | ID of the Directory Service Active Directory domain (e.g., `d-1234567890`). |
+| `domain_iam_role_name` | Name of the IAM role the instance uses to call Directory Service APIs. Required when `domain` is set. |
+
+```hcl
+resource "aws_directory_service_directory" "demo" {
+  name     = "corp.demo.com"
+  password = var.ad_password
+  edition  = "Standard"
+  type     = "MicrosoftAD"
+
+  vpc_settings {
+    vpc_id     = module.vpc.vpc_id
+    subnet_ids = slice(tolist(module.vpc.database_subnets), 0, 2)
+  }
+}
+
+resource "aws_iam_role" "rds_ad_auth" {
+  name               = "demo-rds-ad-auth"
+  assume_role_policy = data.aws_iam_policy_document.rds_assume_role.json
+}
+
+resource "aws_iam_role_policy_attachment" "rds_directory_services" {
+  role       = aws_iam_role.rds_ad_auth.id
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSDirectoryServiceAccess"
+}
+
+module "db" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = "complete-mssql"
+
+  engine         = "sqlserver-ex"
+  engine_version = "15.00"
+  # ...
+
+  domain               = aws_directory_service_directory.demo.id
+  domain_iam_role_name = aws_iam_role.rds_ad_auth.name
+
+  # ...
+}
+```
+
+### Self-managed Active Directory
+
+Use `domain_fqdn` and related variables for a self-managed (on-premises) AD. These conflict with `domain` and `domain_iam_role_name`:
+
+| Variable | Description |
+|---|---|
+| `domain_fqdn` | FQDN of the self-managed AD domain (e.g., `"corp.example.com"`). |
+| `domain_auth_secret_arn` | ARN of the Secrets Manager secret containing AD credentials. Required when `domain_fqdn` is set. |
+| `domain_dns_ips` | List of two IPv4 DNS IP addresses of your AD domain controllers. |
+| `domain_ou` | Organizational Unit (OU) for the DB instance to join. |
+
+```hcl
+module "db" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = "my-db"
+
+  domain_fqdn            = "corp.example.com"
+  domain_auth_secret_arn = aws_secretsmanager_secret.ad_creds.arn
+  domain_dns_ips         = ["10.0.1.10", "10.0.2.10"]
+  domain_ou              = "OU=RDS,OU=Databases,DC=corp,DC=example,DC=com"
+
+  # ... other variables
+}
+```

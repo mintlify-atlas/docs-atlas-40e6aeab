@@ -1,0 +1,284 @@
+---
+title: 'Monitoring'
+description: 'Configure Enhanced Monitoring, Performance Insights, Database Insights, and CloudWatch log exports for your RDS instances.'
+---
+
+The module exposes three independent monitoring layers: Enhanced Monitoring (OS-level metrics via CloudWatch), Performance Insights (query-level diagnostics), and Database Insights (AI-assisted analysis). CloudWatch log exports capture engine-specific log streams for long-term retention and alerting.
+
+<Tabs>
+  <Tab title="Enhanced Monitoring">
+    Enhanced Monitoring collects operating-system metrics (CPU, memory, I/O, network) from an agent running on the DB host. Metrics are published to CloudWatch Logs every `monitoring_interval` seconds.
+
+    ### Variables
+
+    | Variable | Default | Description |
+    |---|---|---|
+    | `monitoring_interval` | `0` | Seconds between metric collection. `0` disables Enhanced Monitoring. Valid values: `0`, `1`, `5`, `10`, `15`, `30`, `60`. |
+    | `create_monitoring_role` | `false` | Create the IAM role required to publish metrics to CloudWatch. |
+    | `monitoring_role_arn` | `null` | ARN of an existing IAM role to use. Provide this when `create_monitoring_role = false` and `monitoring_interval > 0`. |
+    | `monitoring_role_name` | `"rds-monitoring-role"` | Name of the IAM role to create when `create_monitoring_role = true`. |
+    | `monitoring_role_use_name_prefix` | `false` | When `true`, use `monitoring_role_name` as a prefix. |
+    | `monitoring_role_description` | `null` | Description of the monitoring IAM role. |
+    | `monitoring_role_permissions_boundary` | `null` | ARN of the IAM permissions boundary to attach to the monitoring role. |
+
+    ### Let the module create the IAM role
+
+    ```hcl
+    module "db" {
+      source = "terraform-aws-modules/rds/aws"
+
+      identifier = "enhanced-monitoring"
+
+      engine               = "mysql"
+      engine_version       = "8.0"
+      family               = "mysql8.0"
+      major_engine_version = "8.0"
+      instance_class       = "db.t4g.large"
+
+      allocated_storage     = 20
+      max_allocated_storage = 100
+
+      db_name  = "completeMysql"
+      username = "complete_mysql"
+      port     = 3306
+
+      multi_az               = true
+      db_subnet_group_name   = module.vpc.database_subnet_group
+      vpc_security_group_ids = [module.security_group.security_group_id]
+
+      maintenance_window              = "Mon:00:00-Mon:03:00"
+      backup_window                   = "03:00-06:00"
+      enabled_cloudwatch_logs_exports = ["audit", "general"]
+
+      backup_retention_period = 0
+      skip_final_snapshot     = true
+      deletion_protection     = false
+
+      # Enhanced Monitoring
+      monitoring_interval    = 30
+      create_monitoring_role = true
+
+      # Also enable Performance Insights
+      performance_insights_enabled          = true
+      performance_insights_retention_period = 7
+
+      tags = local.tags
+    }
+    ```
+
+    ### Bring your own IAM role
+
+    The enhanced-monitoring example shows how to create the role manually and pass its ARN:
+
+    ```hcl
+    resource "aws_iam_role" "rds_enhanced_monitoring" {
+      name_prefix        = "rds-enhanced-monitoring-"
+      assume_role_policy = data.aws_iam_policy_document.rds_enhanced_monitoring.json
+    }
+
+    resource "aws_iam_role_policy_attachment" "rds_enhanced_monitoring" {
+      role       = aws_iam_role.rds_enhanced_monitoring.name
+      policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
+    }
+
+    data "aws_iam_policy_document" "rds_enhanced_monitoring" {
+      statement {
+        actions = ["sts:AssumeRole"]
+        effect  = "Allow"
+
+        principals {
+          type        = "Service"
+          identifiers = ["monitoring.rds.amazonaws.com"]
+        }
+      }
+    }
+
+    module "db" {
+      source = "terraform-aws-modules/rds/aws"
+
+      identifier = "enhanced-monitoring"
+
+      # ... engine, storage, etc.
+
+      # Enhanced Monitoring using an externally managed role
+      monitoring_interval = 30
+      monitoring_role_arn = aws_iam_role.rds_enhanced_monitoring.arn
+
+      # create_monitoring_role = true is also set here so that the module
+      # creates a second role — in practice choose one approach or the other
+      create_monitoring_role = true
+
+      tags = local.tags
+    }
+    ```
+
+    ### PostgreSQL with named role and prefix
+
+    The complete-postgres example demonstrates using a name prefix for the role:
+
+    ```hcl
+    module "db" {
+      source = "terraform-aws-modules/rds/aws"
+
+      # ...
+
+      create_monitoring_role          = true
+      monitoring_interval             = 60
+      monitoring_role_name            = "example-monitoring-role-name"
+      monitoring_role_use_name_prefix = true
+      monitoring_role_description     = "Description for monitoring role"
+
+      # ...
+    }
+    ```
+  </Tab>
+
+  <Tab title="Performance Insights">
+    Performance Insights provides a dashboard showing database load by wait type, SQL query, and host. It works on top of Enhanced Monitoring and is supported for most instance classes.
+
+    ### Variables
+
+    | Variable | Default | Description |
+    |---|---|---|
+    | `performance_insights_enabled` | `false` | Enable Performance Insights. |
+    | `performance_insights_retention_period` | `7` | Days to retain data. Valid values: `7`, `731` (2 years), or any multiple of `31`. |
+    | `performance_insights_kms_key_id` | `null` | ARN of the KMS key to encrypt Performance Insights data. If omitted, AWS uses the default key. |
+
+    ### Example
+
+    ```hcl
+    module "db" {
+      source = "terraform-aws-modules/rds/aws"
+
+      identifier = "my-db"
+
+      # ... engine, instance, storage variables
+
+      # Performance Insights
+      performance_insights_enabled          = true
+      performance_insights_retention_period = 7
+
+      # Optional: encrypt with a specific KMS key
+      performance_insights_kms_key_id = "arn:aws:kms:eu-west-1:123456789012:key/mrk-..."
+
+      # ... other variables
+    }
+    ```
+
+    ### Retention period options
+
+    | Value | Description |
+    |---|---|
+    | `7` | 7 days (free tier) |
+    | `31` | 31 days |
+    | `62` | 62 days |
+    | `93` | 93 days |
+    | `124` | 124 days |
+    | `155` | 155 days |
+    | `186` | 186 days |
+    | `731` | 2 years |
+
+    Values must be `7`, `731`, or a multiple of `31`.
+  </Tab>
+
+  <Tab title="Database Insights">
+    Database Insights is an advanced observability feature that provides AI-powered recommendations and deeper performance analysis. It requires Performance Insights to be enabled.
+
+    ### Variables
+
+    | Variable | Default | Description |
+    |---|---|---|
+    | `database_insights_mode` | `null` | Mode of Database Insights. Valid values: `standard`, `advanced`. |
+
+    ### Example
+
+    ```hcl
+    module "db" {
+      source = "terraform-aws-modules/rds/aws"
+
+      identifier = "my-db"
+
+      # ... engine, instance, storage variables
+
+      # Database Insights requires Performance Insights
+      performance_insights_enabled          = true
+      performance_insights_retention_period = 731
+
+      database_insights_mode = "advanced"
+
+      # ... other variables
+    }
+    ```
+
+    <Note>
+      `advanced` mode incurs additional charges and requires an instance class that supports Database Insights. Check the AWS documentation for supported instance classes before enabling advanced mode.
+    </Note>
+  </Tab>
+
+  <Tab title="CloudWatch Logs">
+    The module can export engine log streams to CloudWatch Logs and optionally create the log groups in Terraform so you can manage their retention and encryption.
+
+    ### Variables
+
+    | Variable | Default | Description |
+    |---|---|---|
+    | `enabled_cloudwatch_logs_exports` | `[]` | Log types to export. Valid values depend on engine (see below). |
+    | `create_cloudwatch_log_group` | `false` | Create a CloudWatch log group for each exported log type. |
+    | `cloudwatch_log_group_retention_in_days` | `7` | Days to retain logs in the created log groups. |
+    | `cloudwatch_log_group_kms_key_id` | `null` | KMS key ARN for encrypting log data. |
+    | `cloudwatch_log_group_skip_destroy` | `null` | When `true`, removes the log group from state without deleting it. |
+    | `cloudwatch_log_group_class` | `null` | Log group class: `STANDARD` or `INFREQUENT_ACCESS`. |
+
+    ### Valid log types by engine
+
+    | Engine | Valid export values |
+    |---|---|
+    | MySQL | `audit`, `error`, `general`, `slowquery` |
+    | MariaDB | `audit`, `error`, `general`, `slowquery` |
+    | PostgreSQL | `postgresql`, `upgrade` |
+    | Oracle | `alert`, `audit`, `listener`, `trace` |
+    | SQL Server | `agent`, `error` |
+
+    ### MySQL example
+
+    ```hcl
+    module "db" {
+      source = "terraform-aws-modules/rds/aws"
+
+      identifier = "my-mysql"
+
+      engine         = "mysql"
+      engine_version = "8.0"
+      # ...
+
+      enabled_cloudwatch_logs_exports     = ["general"]
+      create_cloudwatch_log_group         = true
+      cloudwatch_log_group_retention_in_days = 30
+    }
+    ```
+
+    ### PostgreSQL example
+
+    ```hcl
+    module "db" {
+      source = "terraform-aws-modules/rds/aws"
+
+      identifier = "my-postgres"
+
+      engine         = "postgres"
+      engine_version = "17"
+      # ...
+
+      enabled_cloudwatch_logs_exports        = ["postgresql", "upgrade"]
+      create_cloudwatch_log_group            = true
+      cloudwatch_log_group_retention_in_days = 7
+    }
+    ```
+
+    Log groups are created at the path `/aws/rds/instance/{identifier}/{log_type}`.
+
+    <Note>
+      Log groups are not created when `instance_use_identifier_prefix = true`, because the final identifier is not known until after the instance is created.
+    </Note>
+  </Tab>
+</Tabs>

@@ -1,0 +1,102 @@
+---
+title: "db_subnet_group submodule"
+description: "Reference for the db_subnet_group submodule, which provisions an aws_db_subnet_group resource."
+---
+
+The `db_subnet_group` submodule creates an `aws_db_subnet_group` that spans a list of VPC subnets. DB instances must be associated with a subnet group to run within a VPC.
+
+## Source
+
+```
+./modules/db_subnet_group
+```
+
+## Usage
+
+Use this submodule standalone when you want to manage a subnet group separately from a DB instance, or share it across multiple instances:
+
+```hcl
+module "db_subnet_group" {
+  source  = "terraform-aws-modules/rds/aws//modules/db_subnet_group"
+  version = "~> 6.0"
+
+  name            = "my-db-subnet-group"
+  use_name_prefix = false
+  description     = "Subnet group for production databases"
+  subnet_ids      = ["subnet-0abc123", "subnet-0def456", "subnet-0ghi789"]
+
+  tags = {
+    Environment = "production"
+    Team        = "platform"
+  }
+}
+```
+
+Then reference the output in a DB instance:
+
+```hcl
+module "db" {
+  source  = "terraform-aws-modules/rds/aws"
+  version = "~> 6.0"
+
+  identifier             = "mydb"
+  create_db_subnet_group = false
+  db_subnet_group_name   = module.db_subnet_group.db_subnet_group_id
+
+  # ... other variables
+}
+```
+
+## Input variables
+
+<ParamField path="create" type="bool">
+  Whether to create the subnet group resource. Set to `false` to skip all resource creation.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="name" type="string">
+  The name of the DB subnet group. When `use_name_prefix` is `true`, this is used as a prefix.
+
+  Default: `""`
+</ParamField>
+
+<ParamField path="use_name_prefix" type="bool">
+  Determines whether to use `name` as-is or create a unique name beginning with `name` as the prefix.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="description" type="string">
+  The description of the DB subnet group.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="subnet_ids" type="list(string)">
+  A list of VPC subnet IDs for the subnet group. At least two subnets in separate Availability Zones are recommended for high availability.
+
+  Default: `[]`
+</ParamField>
+
+<ParamField path="region" type="string">
+  Region where the subnet group will be managed. Defaults to the region set in the provider configuration.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="tags" type="map(string)">
+  A mapping of tags to assign to the DB subnet group resource.
+
+  Default: `{}`
+</ParamField>
+
+## Outputs
+
+<ResponseField name="db_subnet_group_id" type="string">
+  The name (ID) of the DB subnet group. Pass this to the `db_subnet_group_name` input of a DB instance.
+</ResponseField>
+
+<ResponseField name="db_subnet_group_arn" type="string">
+  The ARN of the DB subnet group.
+</ResponseField>

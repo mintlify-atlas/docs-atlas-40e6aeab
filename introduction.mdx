@@ -1,0 +1,95 @@
+---
+title: "Introduction"
+description: "A Terraform module for creating and managing AWS RDS database instances, with composable submodules for every aspect of a production RDS deployment."
+---
+
+## What this module does
+
+The `terraform-aws-rds` module creates and manages [Amazon RDS](https://aws.amazon.com/rds/) database instances on AWS. It wraps the `aws_db_instance` resource and the supporting resources it depends on — subnet groups, parameter groups, option groups, and monitoring roles — into a single, opinionated module with production-safe defaults.
+
+Storage encryption is **enabled by default**. Master passwords are managed by AWS Secrets Manager by default. A final snapshot is created on deletion by default. These defaults are intentional and reflect how a production RDS instance should be configured.
+
+<Note>
+This module does not create RDS security groups. Use the [terraform-aws-security-group](https://github.com/terraform-aws-modules/terraform-aws-security-group) module to create the security group and pass its ID via `vpc_security_group_ids`.
+</Note>
+
+## Supported database engines
+
+The module supports all RDS database engines:
+
+| Engine | `engine` value | Default port |
+|--------|---------------|-------------|
+| MySQL | `mysql` | `3306` |
+| PostgreSQL | `postgres` | `5432` |
+| MariaDB | `mariadb` | `3306` |
+| Oracle SE2 | `oracle-se2` | `1521` |
+| Microsoft SQL Server | `sqlserver-ex`, `sqlserver-web`, `sqlserver-se`, `sqlserver-ee` | `1433` |
+
+## Key capabilities
+
+<CardGroup cols={2}>
+  <Card title="Storage encryption" icon="lock">
+    `storage_encrypted` defaults to `true`. Bring your own KMS key with `kms_key_id`, or use the AWS-managed default key.
+  </Card>
+  <Card title="Multi-AZ" icon="arrows-split-up-and-left">
+    Set `multi_az = true` to deploy a standby replica in a second Availability Zone for automatic failover.
+  </Card>
+  <Card title="Blue/Green deployments" icon="arrows-rotate">
+    Enable `blue_green_update` for low-downtime engine version upgrades and schema changes without a maintenance window.
+  </Card>
+  <Card title="Secrets Manager passwords" icon="key">
+    `manage_master_user_password` defaults to `true`. RDS generates and stores the master password in Secrets Manager and rotates it automatically.
+  </Card>
+  <Card title="Enhanced Monitoring" icon="chart-line">
+    Set `monitoring_interval` to a non-zero value (1–60 seconds) and `create_monitoring_role = true` to enable OS-level metrics in CloudWatch.
+  </Card>
+  <Card title="Performance Insights" icon="eye">
+    Set `performance_insights_enabled = true` to enable query-level performance analysis. Data is retained for 7 days by default.
+  </Card>
+  <Card title="Read replicas" icon="copy">
+    Pass `replicate_source_db` with the source instance identifier or ARN to create a read replica, including cross-region replicas.
+  </Card>
+  <Card title="Storage autoscaling" icon="expand">
+    Set `max_allocated_storage` above `allocated_storage` to allow RDS to automatically increase storage as usage grows.
+  </Card>
+</CardGroup>
+
+## Submodules
+
+The root module is composed of five submodules. Each submodule can also be called independently if you only need to manage part of the infrastructure.
+
+| Submodule | What it creates | Controlled by |
+|-----------|----------------|---------------|
+| `db_instance` | The `aws_db_instance` resource, Enhanced Monitoring IAM role, CloudWatch log groups | `create_db_instance` |
+| `db_subnet_group` | An `aws_db_subnet_group` across two or more subnets | `create_db_subnet_group` |
+| `db_parameter_group` | An `aws_db_parameter_group` for engine-specific parameters | `create_db_parameter_group` |
+| `db_option_group` | An `aws_db_option_group` for optional engine features (MySQL, Oracle, MSSQL only) | `create_db_option_group` |
+| `db_instance_role_association` | `aws_db_instance_role_association` resources linking IAM roles to the instance | `db_instance_role_associations` map |
+
+For PostgreSQL, `db_option_group` is never created because PostgreSQL does not support option groups. The module handles this automatically.
+
+## Requirements
+
+| Requirement | Minimum version |
+|-------------|----------------|
+| Terraform | `>= 1.11.1` |
+| AWS provider (`hashicorp/aws`) | `>= 6.28` |
+
+Declare these in your root module's `versions.tf`:
+
+```hcl versions.tf
+terraform {
+  required_version = ">= 1.11.1"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 6.28"
+    }
+  }
+}
+```
+
+## Next steps
+
+See the [quickstart](/quickstart) to deploy a working RDS instance with a complete MySQL or PostgreSQL example.

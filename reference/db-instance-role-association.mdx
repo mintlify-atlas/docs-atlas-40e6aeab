@@ -1,0 +1,106 @@
+---
+title: "db_instance_role_association submodule"
+description: "Reference for the db_instance_role_association submodule, which associates an IAM role with an RDS DB instance for a specific feature."
+---
+
+The `db_instance_role_association` submodule creates an `aws_db_instance_role_association` resource, linking an IAM role to an RDS DB instance for a named feature (e.g. S3 integration, Lambda access). The root module uses this submodule via `for_each` over the `db_instance_role_associations` map variable.
+
+## Source
+
+```
+./modules/db_instance_role_association
+```
+
+## How the root module uses this submodule
+
+The root module creates one association per entry in the `db_instance_role_associations` map:
+
+```hcl
+# From the root module (simplified)
+module "db_instance_role_association" {
+  source   = "./modules/db_instance_role_association"
+  for_each = var.db_instance_role_associations
+
+  feature_name           = each.key
+  role_arn               = each.value
+  db_instance_identifier = module.db_instance.db_instance_identifier
+}
+```
+
+To use role associations via the root module, set `db_instance_role_associations`:
+
+```hcl
+module "db" {
+  source  = "terraform-aws-modules/rds/aws"
+  version = "~> 6.0"
+
+  identifier = "mydb"
+  # ... other variables
+
+  db_instance_role_associations = {
+    s3_integration = "arn:aws:iam::123456789012:role/rds-s3-export-role"
+    lambda_access  = "arn:aws:iam::123456789012:role/rds-lambda-role"
+  }
+}
+```
+
+The map key becomes the `feature_name` and the map value becomes the `role_arn`.
+
+## Standalone usage
+
+To use this submodule directly — for example when the DB instance is managed by a separate module:
+
+```hcl
+module "rds_s3_association" {
+  source  = "terraform-aws-modules/rds/aws//modules/db_instance_role_association"
+  version = "~> 6.0"
+
+  db_instance_identifier = "my-existing-db-instance"
+  feature_name           = "s3Import"
+  role_arn               = aws_iam_role.rds_s3.arn
+
+  region = "us-east-1"
+}
+```
+
+<Info>
+  The `feature_name` must match the RDS feature name exactly as recognized by the AWS API. Common values include `s3Import`, `s3Export`, `Lambda`, and `SageMaker`.
+</Info>
+
+## Input variables
+
+<ParamField path="create" type="bool">
+  Determines whether to create the DB instance role association resource.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="feature_name" type="string">
+  The name of the RDS feature to associate with the IAM role. Common values: `s3Import`, `s3Export`, `Lambda`, `SageMaker`.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="role_arn" type="string">
+  The Amazon Resource Name (ARN) of the IAM role to associate with the DB instance.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="db_instance_identifier" type="string">
+  The identifier of the DB instance to associate with the IAM role.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="region" type="string">
+  Region where the association will be managed. Defaults to the region set in the provider configuration.
+
+  Default: `null`
+</ParamField>
+
+## Outputs
+
+<ResponseField name="db_instance_role_association_id" type="string">
+  The association ID, formatted as `db_instance_identifier,role_arn`. This is the composite identifier used by the AWS provider.
+</ResponseField>

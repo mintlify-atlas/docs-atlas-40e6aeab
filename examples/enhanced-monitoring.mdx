@@ -1,0 +1,274 @@
+---
+title: "Enhanced monitoring example"
+description: "Configure RDS Enhanced Monitoring with a custom IAM role and CloudWatch log exports."
+---
+
+RDS Enhanced Monitoring collects operating system-level metrics (CPU, memory, disk I/O, network) from the hypervisor running the DB instance. These metrics are published to CloudWatch Logs under the `RDSOSMetrics` log group and are distinct from the standard CloudWatch metrics available at the instance level.
+
+This example shows how to use an **externally created IAM role** for enhanced monitoring, demonstrating the `monitoring_role_arn` approach as an alternative to `create_monitoring_role = true`.
+
+## Configuration
+
+```hcl main.tf
+provider "aws" {
+  region = local.region
+}
+
+data "aws_availability_zones" "available" {}
+
+locals {
+  name   = "enhanced-monitoring"
+  region = "eu-west-1"
+
+  vpc_cidr = "10.0.0.0/16"
+  azs      = slice(data.aws_availability_zones.available.names, 0, 3)
+
+  tags = {
+    Name       = local.name
+    Example    = local.name
+    Repository = "https://github.com/terraform-aws-modules/terraform-aws-rds"
+  }
+}
+
+################################################################################
+# RDS Module
+################################################################################
+
+module "db" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = local.name
+
+  # All available versions: http://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_MySQL.html#MySQL.Concepts.VersionMgmt
+  engine               = "mysql"
+  engine_version       = "8.0"
+  family               = "mysql8.0" # DB parameter group
+  major_engine_version = "8.0"      # DB option group
+  instance_class       = "db.t4g.large"
+
+  allocated_storage     = 20
+  max_allocated_storage = 100
+
+  db_name  = "completeMysql"
+  username = "complete_mysql"
+  port     = 3306
+
+  multi_az               = true
+  db_subnet_group_name   = module.vpc.database_subnet_group
+  vpc_security_group_ids = [module.security_group.security_group_id]
+
+  maintenance_window              = "Mon:00:00-Mon:03:00"
+  backup_window                   = "03:00-06:00"
+  enabled_cloudwatch_logs_exports = ["audit", "general"]
+
+  backup_retention_period = 0
+  skip_final_snapshot     = true
+  deletion_protection     = false
+
+  # Enhanced monitoring
+  monitoring_interval = 30
+  monitoring_role_arn = aws_iam_role.rds_enhanced_monitoring.arn
+
+  performance_insights_enabled          = true
+  performance_insights_retention_period = 7
+  create_monitoring_role                = true
+
+  tags = local.tags
+}
+
+################################################################################
+# Create an IAM role to allow enhanced monitoring
+################################################################################
+
+resource "aws_iam_role" "rds_enhanced_monitoring" {
+  name_prefix        = "rds-enhanced-monitoring-"
+  assume_role_policy = data.aws_iam_policy_document.rds_enhanced_monitoring.json
+}
+
+resource "aws_iam_role_policy_attachment" "rds_enhanced_monitoring" {
+  role       = aws_iam_role.rds_enhanced_monitoring.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
+}
+
+data "aws_iam_policy_document" "rds_enhanced_monitoring" {
+  statement {
+    actions = [
+      "sts:AssumeRole",
+    ]
+
+    effect = "Allow"
+
+    principals {
+      type        = "Service"
+      identifiers = ["monitoring.rds.amazonaws.com"]
+    }
+  }
+}
+
+################################################################################
+# Supporting Resources
+################################################################################
+
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "~> 6.0"
+
+  name = local.name
+  cidr = local.vpc_cidr
+
+  azs              = local.azs
+  public_subnets   = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k)]
+  private_subnets  = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 3)]
+  database_subnets = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 6)]
+
+  create_database_subnet_group = true
+
+  tags = local.tags
+}
+
+module "security_group" {
+  source  = "terraform-aws-modules/security-group/aws"
+  version = "~> 5.0"
+
+  name        = local.name
+  description = "Enhanced monitoring MySQL example security group"
+  vpc_id      = module.vpc.vpc_id
+
+  # ingress
+  ingress_with_cidr_blocks = [
+    {
+      from_port   = 3306
+      to_port     = 3306
+      protocol    = "tcp"
+      description = "MySQL access from within VPC"
+      cidr_blocks = module.vpc.vpc_cidr_block
+    },
+  ]
+
+  tags = local.tags
+}
+```
+
+## `monitoring_interval` values
+
+The `monitoring_interval` variable controls how frequently (in seconds) Enhanced Monitoring metrics are sampled and sent to CloudWatch Logs. Valid values are:
+
+| Value | Behavior |
+|---|---|
+| `0` | Enhanced Monitoring disabled (default) |
+| `1` | Metrics collected every second |
+| `5` | Metrics collected every 5 seconds |
+| `10` | Metrics collected every 10 seconds |
+| `15` | Metrics collected every 15 seconds |
+| `30` | Metrics collected every 30 seconds |
+| `60` | Metrics collected every 60 seconds |
+
+Lower intervals provide more granular data but increase the volume of data written to CloudWatch Logs. For most production workloads, `30` or `60` seconds provides sufficient granularity.
+
+<Note>
+  When `monitoring_interval` is set to any non-zero value, you must supply either `monitoring_role_arn` (an existing role ARN) or set `create_monitoring_role = true` (to have the module create the role automatically). Failing to provide a role when `monitoring_interval > 0` will result in an apply error.
+</Note>
+
+## Two approaches to the monitoring IAM role
+
+### Option 1: Let the module create the role
+
+Set `create_monitoring_role = true` and optionally customize the role name:
+
+```hcl
+module "db" {
+  source = "terraform-aws-modules/rds/aws"
+
+  # ...
+
+  monitoring_interval            = 30
+  create_monitoring_role         = true
+  monitoring_role_name           = "my-rds-monitoring-role"
+  monitoring_role_use_name_prefix = true
+  monitoring_role_description    = "RDS enhanced monitoring role for production"
+}
+```
+
+The module creates an IAM role with the `AmazonRDSEnhancedMonitoringRole` managed policy and the trust policy for `monitoring.rds.amazonaws.com`.
+
+### Option 2: Bring your own role
+
+Create the IAM role outside the module and pass its ARN via `monitoring_role_arn`:
+
+```hcl
+resource "aws_iam_role" "rds_enhanced_monitoring" {
+  name_prefix        = "rds-enhanced-monitoring-"
+  assume_role_policy = data.aws_iam_policy_document.rds_enhanced_monitoring.json
+}
+
+resource "aws_iam_role_policy_attachment" "rds_enhanced_monitoring" {
+  role       = aws_iam_role.rds_enhanced_monitoring.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
+}
+
+data "aws_iam_policy_document" "rds_enhanced_monitoring" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    effect  = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["monitoring.rds.amazonaws.com"]
+    }
+  }
+}
+
+module "db" {
+  source = "terraform-aws-modules/rds/aws"
+
+  # ...
+
+  monitoring_interval = 30
+  monitoring_role_arn = aws_iam_role.rds_enhanced_monitoring.arn
+}
+```
+
+This approach is useful when you need to share a single monitoring role across multiple RDS instances in the same account, or when your organization manages IAM resources separately from application infrastructure.
+
+## CloudWatch log exports
+
+The `enabled_cloudwatch_logs_exports` variable controls which database log types are shipped to CloudWatch Logs. The example exports `audit` and `general` logs for MySQL.
+
+Available log types by engine:
+
+| Engine | Valid log types |
+|---|---|
+| MySQL | `general`, `slowquery`, `error`, `audit` |
+| PostgreSQL | `postgresql`, `upgrade` |
+| SQL Server | `error`, `agent`, `trace` |
+| Oracle | `alert`, `audit`, `listener`, `trace` |
+
+When `create_cloudwatch_log_group = true`, the module creates a CloudWatch log group for each log type listed in `enabled_cloudwatch_logs_exports`. The log groups are retained for `cloudwatch_log_group_retention_in_days` days (default: 7).
+
+```hcl
+module "db" {
+  source = "terraform-aws-modules/rds/aws"
+
+  # ...
+
+  enabled_cloudwatch_logs_exports         = ["postgresql", "upgrade"]
+  create_cloudwatch_log_group             = true
+  cloudwatch_log_group_retention_in_days  = 30
+  cloudwatch_log_group_kms_key_id         = aws_kms_key.cloudwatch.arn
+}
+```
+
+## Outputs
+
+| Output | Description |
+|---|---|
+| `db_instance_address` | DNS hostname of the RDS instance |
+| `db_instance_endpoint` | Full connection endpoint including port |
+| `db_instance_identifier` | The RDS instance identifier |
+| `db_instance_engine_version_actual` | The resolved engine version running |
+| `db_instance_port` | Database port |
+| `db_instance_name` | The database name |
+| `db_instance_username` | Master username (sensitive) |
+| `db_instance_master_user_secret_arn` | ARN of the Secrets Manager secret |
+| `db_parameter_group_id` | The parameter group name |
+| `db_parameter_group_arn` | ARN of the parameter group |
+| `db_instance_cloudwatch_log_groups` | Map of CloudWatch log group names and ARNs |

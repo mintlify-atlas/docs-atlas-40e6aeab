@@ -1,0 +1,307 @@
+---
+title: "Complete PostgreSQL example"
+description: "A complete RDS PostgreSQL 17 example with automated backup replication, performance insights, and managed password rotation."
+---
+
+This example provisions a production-ready PostgreSQL 17 RDS instance including VPC, security groups, parameter group, CloudWatch log groups, enhanced monitoring, and cross-region automated backup replication. A second `db_default` instance using AWS-managed groups is also included.
+
+<Note>
+  Option groups are **not supported** for PostgreSQL. The module automatically skips option group creation when the engine is `postgres`. Any value set for `option_group_name` will be ignored.
+</Note>
+
+<Tip>
+  Enable `performance_insights_enabled = true` for PostgreSQL instances in production. Performance Insights provides query-level diagnostics that are especially valuable for identifying slow queries, lock contention, and wait event bottlenecks. The 7-day retention tier is free.
+</Tip>
+
+## Configuration
+
+```hcl main.tf
+provider "aws" {
+  region = local.region
+}
+
+data "aws_caller_identity" "current" {}
+data "aws_availability_zones" "available" {}
+
+locals {
+  name    = "complete-postgresql"
+  region  = "eu-west-1"
+  region2 = "eu-central-1"
+
+  vpc_cidr = "10.0.0.0/16"
+  azs      = slice(data.aws_availability_zones.available.names, 0, 3)
+
+  tags = {
+    Name       = local.name
+    Example    = local.name
+    Repository = "https://github.com/terraform-aws-modules/terraform-aws-rds"
+  }
+}
+
+################################################################################
+# RDS Module
+################################################################################
+
+module "db" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = local.name
+
+  # All available versions: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_PostgreSQL.html#PostgreSQL.Concepts
+  engine                   = "postgres"
+  engine_version           = "17"
+  engine_lifecycle_support = "open-source-rds-extended-support-disabled"
+  family                   = "postgres17" # DB parameter group
+  major_engine_version     = "17"         # DB option group
+  instance_class           = "db.t4g.large"
+
+  allocated_storage     = 20
+  max_allocated_storage = 100
+
+  # NOTE: Do NOT use 'user' as the value for 'username' as it throws:
+  # "Error creating DB Instance: InvalidParameterValue: MasterUsername
+  # user cannot be used as it is a reserved word used by the engine"
+  db_name  = "completePostgresql"
+  username = "complete_postgresql"
+  port     = 5432
+
+  # Setting manage_master_user_password_rotation to false after it
+  # has previously been set to true disables automatic rotation
+  # however using an initial value of false (default) does not disable
+  # automatic rotation and rotation will be handled by RDS.
+  # manage_master_user_password_rotation allows users to configure
+  # a non-default schedule and is not meant to disable rotation
+  # when initially creating / enabling the password management feature
+  manage_master_user_password_rotation              = true
+  master_user_password_rotate_immediately           = false
+  master_user_password_rotation_schedule_expression = "rate(15 days)"
+
+  multi_az               = true
+  db_subnet_group_name   = module.vpc.database_subnet_group
+  vpc_security_group_ids = [module.security_group.security_group_id]
+
+  maintenance_window              = "Mon:00:00-Mon:03:00"
+  backup_window                   = "03:00-06:00"
+  enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
+  create_cloudwatch_log_group     = true
+
+  backup_retention_period = 1
+  skip_final_snapshot     = true
+  deletion_protection     = false
+
+  performance_insights_enabled          = true
+  performance_insights_retention_period = 7
+  create_monitoring_role                = true
+  monitoring_interval                   = 60
+  monitoring_role_name                  = "example-monitoring-role-name"
+  monitoring_role_use_name_prefix       = true
+  monitoring_role_description           = "Description for monitoring role"
+
+  parameters = [
+    {
+      name  = "autovacuum"
+      value = 1
+    },
+    {
+      name  = "client_encoding"
+      value = "utf8"
+    }
+  ]
+
+  tags = local.tags
+  db_option_group_tags = {
+    "Sensitive" = "low"
+  }
+  db_parameter_group_tags = {
+    "Sensitive" = "low"
+  }
+  cloudwatch_log_group_tags = {
+    "Sensitive" = "high"
+  }
+}
+
+module "db_default" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier                     = "${local.name}-default"
+  instance_use_identifier_prefix = true
+
+  create_db_option_group    = false
+  create_db_parameter_group = false
+
+  # All available versions: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_PostgreSQL.html#PostgreSQL.Concepts
+  engine               = "postgres"
+  engine_version       = "17"
+  family               = "postgres17" # DB parameter group
+  major_engine_version = "17"         # DB option group
+  instance_class       = "db.t4g.large"
+
+  allocated_storage = 20
+
+  # NOTE: Do NOT use 'user' as the value for 'username' as it throws:
+  # "Error creating DB Instance: InvalidParameterValue: MasterUsername
+  # user cannot be used as it is a reserved word used by the engine"
+  db_name  = "completePostgresql"
+  username = "complete_postgresql"
+  port     = 5432
+
+  db_subnet_group_name   = module.vpc.database_subnet_group
+  vpc_security_group_ids = [module.security_group.security_group_id]
+
+  maintenance_window      = "Mon:00:00-Mon:03:00"
+  backup_window           = "03:00-06:00"
+  backup_retention_period = 0
+
+  tags = local.tags
+}
+
+module "db_disabled" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = "${local.name}-disabled"
+
+  create_db_instance        = false
+  create_db_parameter_group = false
+  create_db_option_group    = false
+}
+
+################################################################################
+# RDS Automated Backups Replication Module
+################################################################################
+
+provider "aws" {
+  alias  = "region2"
+  region = local.region2
+}
+
+module "kms" {
+  source      = "terraform-aws-modules/kms/aws"
+  version     = "~> 1.0"
+  description = "KMS key for cross region automated backups replication"
+
+  # Aliases
+  aliases                 = [local.name]
+  aliases_use_name_prefix = true
+
+  key_owners = [data.aws_caller_identity.current.arn]
+
+  tags = local.tags
+
+  providers = {
+    aws = aws.region2
+  }
+}
+
+module "db_automated_backups_replication" {
+  source = "terraform-aws-modules/rds/aws//modules/db_instance_automated_backups_replication"
+
+  source_db_instance_arn = module.db.db_instance_arn
+  kms_key_arn            = module.kms.key_arn
+
+  providers = {
+    aws = aws.region2
+  }
+}
+
+################################################################################
+# Supporting Resources
+################################################################################
+
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "~> 6.0"
+
+  name = local.name
+  cidr = local.vpc_cidr
+
+  azs              = local.azs
+  public_subnets   = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k)]
+  private_subnets  = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 3)]
+  database_subnets = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 6)]
+
+  create_database_subnet_group = true
+
+  tags = local.tags
+}
+
+module "security_group" {
+  source  = "terraform-aws-modules/security-group/aws"
+  version = "~> 5.0"
+
+  name        = local.name
+  description = "Complete PostgreSQL example security group"
+  vpc_id      = module.vpc.vpc_id
+
+  # ingress
+  ingress_with_cidr_blocks = [
+    {
+      from_port   = 5432
+      to_port     = 5432
+      protocol    = "tcp"
+      description = "PostgreSQL access from within VPC"
+      cidr_blocks = module.vpc.vpc_cidr_block
+    },
+  ]
+
+  tags = local.tags
+}
+```
+
+## PostgreSQL-specific configuration
+
+### No option groups
+
+PostgreSQL on RDS does not support option groups. The module skips option group creation entirely when `engine = "postgres"`, regardless of what is set for `create_db_option_group` or `option_group_name`.
+
+### Log exports
+
+PostgreSQL supports two CloudWatch log export types:
+
+| Log type | Description |
+|---|---|
+| `postgresql` | PostgreSQL server log (errors, connections, slow queries depending on `log_min_duration_statement`) |
+| `upgrade` | Engine version upgrade events |
+
+These differ from MySQL which uses `general`, `slowquery`, `audit`, and `error` log types.
+
+### Parameter group configuration
+
+The example sets two parameters:
+
+- `autovacuum = 1` — ensures autovacuum is enabled (it is on by default, but making it explicit prevents accidental disabling)
+- `client_encoding = utf8` — sets the client-side character encoding
+
+### Reserved usernames
+
+<Warning>
+  Do not use `user` as the value for `username`. PostgreSQL reserves this word and RDS will return an `InvalidParameterValue` error. Other reserved words include `rdsadmin`, `rds_superuser`, and `postgres` (for some versions).
+</Warning>
+
+### Managed password rotation
+
+The example configures Secrets Manager to rotate the master user password on a 15-day schedule using `manage_master_user_password_rotation = true` with `master_user_password_rotation_schedule_expression = "rate(15 days)"`. Setting `master_user_password_rotate_immediately = false` prevents an immediate rotation on first apply.
+
+### Automated backup replication
+
+The example uses the `db_instance_automated_backups_replication` submodule to replicate automated backups to `eu-central-1`. A KMS key is created in the target region to encrypt the replicated backups.
+
+### Engine lifecycle support
+
+`engine_lifecycle_support = "open-source-rds-extended-support-disabled"` opts out of RDS Extended Support (which incurs additional charges for end-of-life engine versions). This is appropriate for PostgreSQL 17, which is current. Remove this setting or use `"open-source-rds-extended-support"` if you need extended support for older engine versions.
+
+## Outputs
+
+| Output | Description |
+|---|---|
+| `db_instance_address` | DNS hostname of the RDS instance |
+| `db_instance_endpoint` | Full connection endpoint including port |
+| `db_instance_identifier` | The RDS instance identifier |
+| `db_instance_engine_version_actual` | The resolved engine version running |
+| `db_instance_port` | Database port (5432) |
+| `db_instance_name` | The database name |
+| `db_instance_username` | Master username (sensitive) |
+| `db_instance_master_user_secret_arn` | ARN of the Secrets Manager secret |
+| `db_instance_secretsmanager_secret_rotation_enabled` | Whether automatic rotation is enabled |
+| `db_parameter_group_id` | The parameter group name |
+| `db_enhanced_monitoring_iam_role_arn` | ARN of the enhanced monitoring IAM role |
+| `db_instance_cloudwatch_log_groups` | Map of CloudWatch log group names and ARNs |

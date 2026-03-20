@@ -1,0 +1,186 @@
+---
+title: "Outputs"
+description: "Complete reference for all outputs produced by the terraform-aws-rds root module."
+---
+
+The root module exposes the following outputs after a successful apply.
+
+<AccordionGroup>
+
+<Accordion title="Instance">
+
+<ResponseField name="db_instance_address" type="string">
+  The hostname of the RDS instance. Use this for DNS-based connections.
+</ResponseField>
+
+<ResponseField name="db_instance_arn" type="string">
+  The ARN of the RDS instance.
+</ResponseField>
+
+<ResponseField name="db_instance_availability_zone" type="string">
+  The Availability Zone in which the RDS instance is running.
+</ResponseField>
+
+<ResponseField name="db_instance_endpoint" type="string">
+  The connection endpoint in `address:port` format. Use this value directly in application connection strings.
+</ResponseField>
+
+<ResponseField name="db_instance_engine" type="string">
+  The database engine of the RDS instance (e.g. `mysql`, `postgres`).
+</ResponseField>
+
+<ResponseField name="db_instance_engine_version_actual" type="string">
+  The running version of the database engine. This may differ from the requested `engine_version` if minor version auto-upgrades are enabled.
+</ResponseField>
+
+<ResponseField name="db_instance_hosted_zone_id" type="string">
+  The canonical hosted zone ID of the DB instance. Use this in a Route 53 Alias record to route traffic to the instance.
+</ResponseField>
+
+<ResponseField name="db_instance_identifier" type="string">
+  The RDS instance identifier. When `instance_use_identifier_prefix` is `true`, this will be the generated unique identifier.
+</ResponseField>
+
+<ResponseField name="db_instance_resource_id" type="string">
+  The RDS Resource ID of this instance. This is a stable identifier used in CloudWatch metrics and IAM policies.
+</ResponseField>
+
+<ResponseField name="db_instance_status" type="string">
+  The current status of the RDS instance (e.g. `available`, `modifying`, `backing-up`).
+</ResponseField>
+
+<ResponseField name="db_instance_name" type="string">
+  The name of the database created on the instance, as specified by `db_name`.
+</ResponseField>
+
+<ResponseField name="db_instance_username" type="string">
+  The master username for the database. This output is marked **sensitive**.
+</ResponseField>
+
+<ResponseField name="db_instance_port" type="number">
+  The port on which the database instance is accepting connections.
+</ResponseField>
+
+<ResponseField name="db_instance_ca_cert_identifier" type="string">
+  The identifier of the CA certificate in use by the DB instance.
+</ResponseField>
+
+<ResponseField name="db_instance_upgrade_rollout_order" type="string">
+  The order in which the instance is upgraded during a multi-instance upgrade. Possible values: `first`, `second`, `last`.
+</ResponseField>
+
+</Accordion>
+
+<Accordion title="Authentication">
+
+<ResponseField name="db_instance_master_user_secret_arn" type="string">
+  The ARN of the master user secret in AWS Secrets Manager. Only available when `manage_master_user_password` is set to `true`.
+</ResponseField>
+
+<ResponseField name="db_instance_secretsmanager_secret_rotation_enabled" type="bool">
+  Specifies whether automatic rotation is enabled for the master user password secret in Secrets Manager.
+</ResponseField>
+
+</Accordion>
+
+<Accordion title="Active Directory">
+
+<ResponseField name="db_instance_domain" type="string">
+  The ID of the Directory Service Active Directory domain the instance is joined to.
+</ResponseField>
+
+<ResponseField name="db_instance_domain_auth_secret_arn" type="string">
+  The ARN for the Secrets Manager secret with the self-managed Active Directory credentials for the user joining the domain.
+</ResponseField>
+
+<ResponseField name="db_instance_domain_dns_ips" type="list(string)">
+  The IPv4 DNS IP addresses of the primary and secondary self-managed Active Directory domain controllers.
+</ResponseField>
+
+<ResponseField name="db_instance_domain_fqdn" type="string">
+  The fully qualified domain name (FQDN) of the self-managed Active Directory domain.
+</ResponseField>
+
+<ResponseField name="db_instance_domain_iam_role_name" type="string">
+  The name of the IAM role used when making API calls to the Directory Service.
+</ResponseField>
+
+<ResponseField name="db_instance_domain_ou" type="string">
+  The self-managed Active Directory organizational unit the DB instance has joined.
+</ResponseField>
+
+</Accordion>
+
+<Accordion title="SQL Server">
+
+<ResponseField name="db_listener_endpoint" type="object">
+  The listener connection endpoint for SQL Server Always On. Contains `address`, `hosted_zone_id`, and `port` attributes. Only populated for SQL Server instances with Always On enabled.
+</ResponseField>
+
+</Accordion>
+
+<Accordion title="Subnet Group">
+
+<ResponseField name="db_subnet_group_id" type="string">
+  The name (ID) of the DB subnet group.
+</ResponseField>
+
+<ResponseField name="db_subnet_group_arn" type="string">
+  The ARN of the DB subnet group.
+</ResponseField>
+
+</Accordion>
+
+<Accordion title="Parameter Group">
+
+<ResponseField name="db_parameter_group_id" type="string">
+  The name (ID) of the DB parameter group.
+</ResponseField>
+
+<ResponseField name="db_parameter_group_arn" type="string">
+  The ARN of the DB parameter group.
+</ResponseField>
+
+</Accordion>
+
+<Accordion title="Option Group">
+
+<ResponseField name="db_option_group_id" type="string">
+  The name (ID) of the DB option group.
+</ResponseField>
+
+<ResponseField name="db_option_group_arn" type="string">
+  The ARN of the DB option group.
+</ResponseField>
+
+</Accordion>
+
+<Accordion title="Monitoring">
+
+<ResponseField name="enhanced_monitoring_iam_role_arn" type="string">
+  The ARN of the IAM role created for Enhanced Monitoring. Only populated when `create_monitoring_role` is `true`.
+</ResponseField>
+
+<ResponseField name="enhanced_monitoring_iam_role_name" type="string">
+  The name of the IAM role created for Enhanced Monitoring. Only populated when `create_monitoring_role` is `true`.
+</ResponseField>
+
+</Accordion>
+
+<Accordion title="CloudWatch">
+
+<ResponseField name="db_instance_cloudwatch_log_groups" type="map(object)">
+  A map of CloudWatch log groups created for the DB instance, keyed by log type (e.g. `general`, `slowquery`, `postgresql`). Each value contains the full `aws_cloudwatch_log_group` resource attributes. Only populated when `create_cloudwatch_log_group` is `true`.
+</ResponseField>
+
+</Accordion>
+
+<Accordion title="Role Association">
+
+<ResponseField name="db_instance_role_associations" type="map(object)">
+  A map of DB instance role association resources, keyed by feature name. Each value contains the full `aws_db_instance_role_association` resource attributes including `id` (formatted as `db_instance_identifier,role_arn`).
+</ResponseField>
+
+</Accordion>
+
+</AccordionGroup>

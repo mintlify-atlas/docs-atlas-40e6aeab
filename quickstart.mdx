@@ -1,80 +1,489 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Deploy a working RDS instance in minutes using the terraform-aws-rds module."
 ---
 
-## Get started in three steps
+## Prerequisites
 
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+- Terraform `>= 1.11.1` installed ([install guide](https://developer.hashicorp.com/terraform/install))
+- AWS credentials configured in your environment (`aws configure`, environment variables, or an IAM role)
+- An existing VPC with at least two subnets in different Availability Zones
+- A security group that allows inbound traffic on the database port from your application
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+The module does not create a VPC or security group. Pass existing resource IDs via `vpc_security_group_ids` and either `db_subnet_group_name` (existing subnet group) or `create_db_subnet_group = true` + `subnet_ids` (create a new one).
 </Note>
+
+## Deploy a MySQL instance
+
+The following example is taken directly from the module's `README.md`. It creates a MySQL 8.0 instance with Enhanced Monitoring, IAM database authentication, and a custom parameter group.
+
+<Steps>
+  <Step title="Add the module source">
+    Create a `main.tf` file and declare the module:
+
+    ```hcl main.tf
+    module "db" {
+      source = "terraform-aws-modules/rds/aws"
+
+      identifier = "demodb"
+
+      engine            = "mysql"
+      engine_version    = "8.0"
+      instance_class    = "db.t3a.large"
+      allocated_storage = 5
+
+      db_name  = "demodb"
+      username = "user"
+      port     = "3306"
+
+      iam_database_authentication_enabled = true
+
+      vpc_security_group_ids = ["sg-12345678"]
+
+      maintenance_window = "Mon:00:00-Mon:03:00"
+      backup_window      = "03:00-06:00"
+
+      # Enhanced Monitoring
+      monitoring_interval    = "30"
+      monitoring_role_name   = "MyRDSMonitoringRole"
+      create_monitoring_role = true
+
+      tags = {
+        Owner       = "user"
+        Environment = "dev"
+      }
+
+      # DB subnet group
+      create_db_subnet_group = true
+      subnet_ids             = ["subnet-12345678", "subnet-87654321"]
+
+      # DB parameter group
+      family = "mysql8.0"
+
+      # DB option group
+      major_engine_version = "8.0"
+
+      # Deletion protection
+      deletion_protection = true
+
+      parameters = [
+        {
+          name  = "character_set_client"
+          value = "utf8mb4"
+        },
+        {
+          name  = "character_set_server"
+          value = "utf8mb4"
+        }
+      ]
+
+      options = [
+        {
+          option_name = "MARIADB_AUDIT_PLUGIN"
+
+          option_settings = [
+            {
+              name  = "SERVER_AUDIT_EVENTS"
+              value = "CONNECT"
+            },
+            {
+              name  = "SERVER_AUDIT_FILE_ROTATIONS"
+              value = "37"
+            },
+          ]
+        },
+      ]
+    }
+    ```
+
+    Replace `sg-12345678` and the `subnet_ids` values with real IDs from your AWS account.
+  </Step>
+
+  <Step title="Configure required variables">
+    Every module call requires `identifier`. The following variables are needed for a functional instance:
+
+    | Variable | Description | Example |
+    |----------|-------------|--------|
+    | `identifier` | Unique name for the RDS instance | `"demodb"` |
+    | `engine` | Database engine | `"mysql"` |
+    | `engine_version` | Engine version | `"8.0"` |
+    | `instance_class` | EC2 instance type | `"db.t3a.large"` |
+    | `allocated_storage` | Initial storage in GiB | `5` |
+    | `username` | Master DB username | `"user"` |
+
+    <Tip>
+    `manage_master_user_password` defaults to `true`, so you do not need to supply a password. RDS generates one and stores it in AWS Secrets Manager. Retrieve it after `terraform apply` using the `db_instance_master_user_secret_arn` output.
+    </Tip>
+  </Step>
+
+  <Step title="Configure networking">
+    You must attach the instance to a VPC subnet group and one or more security groups:
+
+    ```hcl
+    # Option A: create a new subnet group
+    create_db_subnet_group = true
+    subnet_ids             = ["subnet-aaa", "subnet-bbb"]
+
+    # Option B: use an existing subnet group
+    create_db_subnet_group = false
+    db_subnet_group_name   = "my-existing-subnet-group"
+
+    # Always required
+    vpc_security_group_ids = ["sg-12345678"]
+    ```
+
+    Provide at least two subnets in different Availability Zones. This is required by RDS regardless of whether you enable Multi-AZ.
+  </Step>
+
+  <Step title="Configure the parameter group">
+    Set `family` to the parameter group family that matches your engine and version:
+
+    | Engine + version | `family` |
+    |-----------------|----------|
+    | MySQL 8.0 | `mysql8.0` |
+    | MySQL 8.4 | `mysql8.4` |
+    | PostgreSQL 17 | `postgres17` |
+    | PostgreSQL 16 | `postgres16` |
+    | MariaDB 10.11 | `mariadb10.11` |
+    | Oracle SE2 19 | `oracle-se2-19` |
+    | SQL Server SE 15 | `sqlserver-se-15.0` |
+
+    For MySQL and Oracle, also set `major_engine_version` so the module can create a matching option group:
+
+    ```hcl
+    family               = "mysql8.0"
+    major_engine_version = "8.0"
+    ```
+
+    For PostgreSQL, the option group is never created (PostgreSQL does not support option groups), so `major_engine_version` is only informational.
+  </Step>
+
+  <Step title="Initialize and apply">
+    ```bash
+    terraform init
+    terraform plan
+    terraform apply
+    ```
+
+    The first `apply` typically takes 10–15 minutes. When it completes, retrieve the connection endpoint:
+
+    ```bash
+    terraform output db_instance_endpoint
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+Do not run `terraform destroy` on a production database without first setting `deletion_protection = false` and `skip_final_snapshot = false`. By default, the module creates a final snapshot and enables deletion protection, which prevents accidental data loss.
+</Warning>
+
+---
+
+## Complete MySQL example
+
+This example is taken directly from `examples/complete-mysql/`. It creates a Multi-AZ MySQL 8.0 instance with Performance Insights, Enhanced Monitoring, CloudWatch log exports, and storage autoscaling. Supporting VPC and security group resources are created using community modules.
+
+```hcl main.tf
+provider "aws" {
+  region = local.region
+}
+
+data "aws_availability_zones" "available" {}
+
+locals {
+  name   = "complete-mysql"
+  region = "eu-west-1"
+
+  vpc_cidr = "10.0.0.0/16"
+  azs      = slice(data.aws_availability_zones.available.names, 0, 3)
+
+  tags = {
+    Name       = local.name
+    Example    = local.name
+    Repository = "https://github.com/terraform-aws-modules/terraform-aws-rds"
+  }
+}
+
+module "db" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = local.name
+
+  engine               = "mysql"
+  engine_version       = "8.0"
+  family               = "mysql8.0" # DB parameter group
+  major_engine_version = "8.0"      # DB option group
+  instance_class       = "db.t4g.large"
+
+  allocated_storage     = 20
+  max_allocated_storage = 100
+
+  db_name  = "completeMysql"
+  username = "complete_mysql"
+  port     = 3306
+
+  multi_az               = true
+  db_subnet_group_name   = module.vpc.database_subnet_group
+  vpc_security_group_ids = [module.security_group.security_group_id]
+
+  maintenance_window              = "Mon:00:00-Mon:03:00"
+  backup_window                   = "03:00-06:00"
+  enabled_cloudwatch_logs_exports = ["general"]
+  create_cloudwatch_log_group     = true
+
+  skip_final_snapshot = true
+  deletion_protection = false
+
+  performance_insights_enabled          = true
+  performance_insights_retention_period = 7
+  create_monitoring_role                = true
+  monitoring_interval                   = 60
+
+  parameters = [
+    {
+      name  = "character_set_client"
+      value = "utf8mb4"
+    },
+    {
+      name  = "character_set_server"
+      value = "utf8mb4"
+    }
+  ]
+
+  tags = local.tags
+}
+
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "~> 6.0"
+
+  name = local.name
+  cidr = local.vpc_cidr
+
+  azs              = local.azs
+  public_subnets   = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k)]
+  private_subnets  = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 3)]
+  database_subnets = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 6)]
+
+  create_database_subnet_group = true
+
+  tags = local.tags
+}
+
+module "security_group" {
+  source  = "terraform-aws-modules/security-group/aws"
+  version = "~> 5.0"
+
+  name        = local.name
+  description = "Complete MySQL example security group"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress_with_cidr_blocks = [
+    {
+      from_port   = 3306
+      to_port     = 3306
+      protocol    = "tcp"
+      description = "MySQL access from within VPC"
+      cidr_blocks = module.vpc.vpc_cidr_block
+    },
+  ]
+
+  tags = local.tags
+}
+```
+
+---
+
+## Complete PostgreSQL example
+
+This example is taken directly from `examples/complete-postgres/`. It creates a Multi-AZ PostgreSQL 17 instance with managed password rotation, Performance Insights, Enhanced Monitoring, and CloudWatch log exports. It also demonstrates automated backups replication to a second region.
+
+```hcl main.tf
+provider "aws" {
+  region = local.region
+}
+
+data "aws_availability_zones" "available" {}
+
+locals {
+  name   = "complete-postgresql"
+  region = "eu-west-1"
+
+  vpc_cidr = "10.0.0.0/16"
+  azs      = slice(data.aws_availability_zones.available.names, 0, 3)
+
+  tags = {
+    Name       = local.name
+    Example    = local.name
+    Repository = "https://github.com/terraform-aws-modules/terraform-aws-rds"
+  }
+}
+
+module "db" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = local.name
+
+  engine                   = "postgres"
+  engine_version           = "17"
+  engine_lifecycle_support = "open-source-rds-extended-support-disabled"
+  family                   = "postgres17" # DB parameter group
+  major_engine_version     = "17"         # DB option group
+  instance_class           = "db.t4g.large"
+
+  allocated_storage     = 20
+  max_allocated_storage = 100
+
+  # NOTE: Do NOT use 'user' as the value for 'username' as it throws:
+  # "Error creating DB Instance: InvalidParameterValue: MasterUsername
+  # user cannot be used as it is a reserved word used by the engine"
+  db_name  = "completePostgresql"
+  username = "complete_postgresql"
+  port     = 5432
+
+  manage_master_user_password_rotation              = true
+  master_user_password_rotate_immediately           = false
+  master_user_password_rotation_schedule_expression = "rate(15 days)"
+
+  multi_az               = true
+  db_subnet_group_name   = module.vpc.database_subnet_group
+  vpc_security_group_ids = [module.security_group.security_group_id]
+
+  maintenance_window              = "Mon:00:00-Mon:03:00"
+  backup_window                   = "03:00-06:00"
+  enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
+  create_cloudwatch_log_group     = true
+
+  backup_retention_period = 1
+  skip_final_snapshot     = true
+  deletion_protection     = false
+
+  performance_insights_enabled          = true
+  performance_insights_retention_period = 7
+  create_monitoring_role                = true
+  monitoring_interval                   = 60
+  monitoring_role_name                  = "example-monitoring-role-name"
+  monitoring_role_use_name_prefix       = true
+  monitoring_role_description           = "Description for monitoring role"
+
+  parameters = [
+    {
+      name  = "autovacuum"
+      value = 1
+    },
+    {
+      name  = "client_encoding"
+      value = "utf8"
+    }
+  ]
+
+  tags = local.tags
+}
+
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "~> 6.0"
+
+  name = local.name
+  cidr = local.vpc_cidr
+
+  azs              = local.azs
+  public_subnets   = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k)]
+  private_subnets  = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 3)]
+  database_subnets = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 6)]
+
+  create_database_subnet_group = true
+
+  tags = local.tags
+}
+
+module "security_group" {
+  source  = "terraform-aws-modules/security-group/aws"
+  version = "~> 5.0"
+
+  name        = local.name
+  description = "Complete PostgreSQL example security group"
+  vpc_id      = module.vpc.vpc_id
+
+  ingress_with_cidr_blocks = [
+    {
+      from_port   = 5432
+      to_port     = 5432
+      protocol    = "tcp"
+      description = "PostgreSQL access from within VPC"
+      cidr_blocks = module.vpc.vpc_cidr_block
+    },
+  ]
+
+  tags = local.tags
+}
+```
+
+<Note>
+PostgreSQL does not support option groups. When `engine = "postgres"` is set, the module automatically skips creating a `db_option_group` resource regardless of the `create_db_option_group` setting.
+</Note>
+
+---
+
+## Common outputs
+
+After `terraform apply`, reference these outputs in other modules or scripts:
+
+```hcl outputs.tf
+output "db_instance_endpoint" {
+  description = "The connection endpoint (hostname:port)"
+  value       = module.db.db_instance_endpoint
+}
+
+output "db_instance_address" {
+  description = "The hostname of the RDS instance"
+  value       = module.db.db_instance_address
+}
+
+output "db_instance_arn" {
+  description = "The ARN of the RDS instance"
+  value       = module.db.db_instance_arn
+}
+
+output "db_instance_master_user_secret_arn" {
+  description = "ARN of the Secrets Manager secret holding the master password"
+  value       = module.db.db_instance_master_user_secret_arn
+}
+```
+
+Retrieve the master password from Secrets Manager using the AWS CLI:
+
+```bash
+aws secretsmanager get-secret-value \
+  --secret-id "$(terraform output -raw db_instance_master_user_secret_arn)" \
+  --query SecretString \
+  --output text
+```
+
+---
+
+## Important operational notes
+
+**`deletion_protection`**
+
+Set `deletion_protection = true` on any instance you do not want accidentally deleted. Terraform will fail with an error if you attempt to destroy an instance with deletion protection enabled, which prevents mistakes. To delete the instance, first set `deletion_protection = false` and re-apply.
+
+**`backup_window` and `maintenance_window`**
+
+These two windows must not overlap. A common pattern taken from the examples above is:
+
+```hcl
+maintenance_window = "Mon:00:00-Mon:03:00"
+backup_window      = "03:00-06:00"
+```
+
+Both values are in UTC. If you omit `backup_window`, AWS assigns a random window.
+
+**`skip_final_snapshot`**
+
+`skip_final_snapshot` defaults to `false`, meaning a final DB snapshot is created when you destroy the instance. Set it to `true` only in non-production environments where you do not need a recovery point.
+
+<Tip>
+For production, use both `deletion_protection = true` and `skip_final_snapshot = false`. For development environments where you frequently recreate infrastructure, use `deletion_protection = false` and `skip_final_snapshot = true`.
+</Tip>

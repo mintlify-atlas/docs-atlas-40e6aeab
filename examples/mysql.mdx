@@ -1,0 +1,252 @@
+---
+title: "Complete MySQL example"
+description: "A complete RDS MySQL 8.0 example with parameter groups, option groups, enhanced monitoring, and Performance Insights."
+---
+
+This example provisions a production-ready MySQL 8.0 RDS instance along with all supporting resources: VPC, security groups, parameter group, option group, CloudWatch log groups, and an enhanced monitoring IAM role. A second `db_default` instance is also shown using AWS-managed default parameter and option groups.
+
+<Note>
+  Use `"8.0"` (not `"8.0.x"`) for `engine_version`. AWS resolves the minor version automatically and manages patch upgrades. Specifying a full patch version such as `"8.0.32"` can cause Terraform to detect drift after AWS applies a patch.
+</Note>
+
+## Configuration
+
+```hcl main.tf
+provider "aws" {
+  region = local.region
+}
+
+data "aws_availability_zones" "available" {}
+
+locals {
+  name   = "complete-mysql"
+  region = "eu-west-1"
+
+  vpc_cidr = "10.0.0.0/16"
+  azs      = slice(data.aws_availability_zones.available.names, 0, 3)
+
+  tags = {
+    Name       = local.name
+    Example    = local.name
+    Repository = "https://github.com/terraform-aws-modules/terraform-aws-rds"
+  }
+}
+
+################################################################################
+# RDS Module
+################################################################################
+
+module "db" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = local.name
+
+  # All available versions: http://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_MySQL.html#MySQL.Concepts.VersionMgmt
+  engine               = "mysql"
+  engine_version       = "8.0"
+  family               = "mysql8.0" # DB parameter group
+  major_engine_version = "8.0"      # DB option group
+  instance_class       = "db.t4g.large"
+
+  allocated_storage     = 20
+  max_allocated_storage = 100
+
+  db_name  = "completeMysql"
+  username = "complete_mysql"
+  port     = 3306
+
+  multi_az               = true
+  db_subnet_group_name   = module.vpc.database_subnet_group
+  vpc_security_group_ids = [module.security_group.security_group_id]
+
+  maintenance_window              = "Mon:00:00-Mon:03:00"
+  backup_window                   = "03:00-06:00"
+  enabled_cloudwatch_logs_exports = ["general"]
+  create_cloudwatch_log_group     = true
+
+  skip_final_snapshot = true
+  deletion_protection = false
+
+  performance_insights_enabled          = true
+  performance_insights_retention_period = 7
+  create_monitoring_role                = true
+  monitoring_interval                   = 60
+
+  parameters = [
+    {
+      name  = "character_set_client"
+      value = "utf8mb4"
+    },
+    {
+      name  = "character_set_server"
+      value = "utf8mb4"
+    }
+  ]
+
+  tags = local.tags
+  db_instance_tags = {
+    "Sensitive" = "high"
+  }
+  db_option_group_tags = {
+    "Sensitive" = "low"
+  }
+  db_parameter_group_tags = {
+    "Sensitive" = "low"
+  }
+  db_subnet_group_tags = {
+    "Sensitive" = "high"
+  }
+  cloudwatch_log_group_tags = {
+    "Sensitive" = "high"
+  }
+}
+
+module "db_default" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = "${local.name}-default"
+
+  create_db_option_group    = false
+  create_db_parameter_group = false
+
+  # All available versions: http://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_MySQL.html#MySQL.Concepts.VersionMgmt
+  engine               = "mysql"
+  engine_version       = "8.0"
+  family               = "mysql8.0" # DB parameter group
+  major_engine_version = "8.0"      # DB option group
+  instance_class       = "db.t4g.large"
+
+  allocated_storage = 200
+
+  db_name  = "completeMysql"
+  username = "complete_mysql"
+  port     = 3306
+
+  db_subnet_group_name   = module.vpc.database_subnet_group
+  vpc_security_group_ids = [module.security_group.security_group_id]
+
+  maintenance_window = "Mon:00:00-Mon:03:00"
+  backup_window      = "03:00-06:00"
+
+  backup_retention_period = 0
+
+  tags = local.tags
+}
+
+module "db_disabled" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = "${local.name}-disabled"
+
+  create_db_instance        = false
+  create_db_parameter_group = false
+  create_db_option_group    = false
+}
+
+################################################################################
+# Supporting Resources
+################################################################################
+
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "~> 6.0"
+
+  name = local.name
+  cidr = local.vpc_cidr
+
+  azs              = local.azs
+  public_subnets   = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k)]
+  private_subnets  = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 3)]
+  database_subnets = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 6)]
+
+  create_database_subnet_group = true
+
+  tags = local.tags
+}
+
+module "security_group" {
+  source  = "terraform-aws-modules/security-group/aws"
+  version = "~> 5.0"
+
+  name        = local.name
+  description = "Complete MySQL example security group"
+  vpc_id      = module.vpc.vpc_id
+
+  # ingress
+  ingress_with_cidr_blocks = [
+    {
+      from_port   = 3306
+      to_port     = 3306
+      protocol    = "tcp"
+      description = "MySQL access from within VPC"
+      cidr_blocks = module.vpc.vpc_cidr_block
+    },
+  ]
+
+  tags = local.tags
+}
+```
+
+## Key configuration choices
+
+### Engine version and parameter group family
+
+The `engine_version`, `family`, and `major_engine_version` values must be consistent with each other:
+
+| Variable | Value | Purpose |
+|---|---|---|
+| `engine_version` | `"8.0"` | The MySQL version to deploy |
+| `family` | `"mysql8.0"` | The parameter group family |
+| `major_engine_version` | `"8.0"` | The option group major version |
+
+### Parameter group settings
+
+The example sets `character_set_client` and `character_set_server` to `utf8mb4`, which is the recommended encoding for MySQL deployments that need full Unicode support (including emoji and supplementary characters). The `utf8` alias in MySQL only supports the BMP subset; `utf8mb4` is the correct choice for modern applications.
+
+### Storage autoscaling
+
+`max_allocated_storage = 100` enables storage autoscaling. RDS will automatically increase allocated storage up to 100 GiB when utilization exceeds 10% of the current allocation. Set this to `0` to disable autoscaling.
+
+### Performance Insights and enhanced monitoring
+
+The example enables both:
+- `performance_insights_enabled = true` — collects query-level metrics, retained for 7 days (free tier)
+- `create_monitoring_role = true` with `monitoring_interval = 60` — creates an IAM role and collects OS-level metrics every 60 seconds
+
+### Default instance variant
+
+`module.db_default` demonstrates using AWS-managed default groups by setting `create_db_option_group = false` and `create_db_parameter_group = false`. This is useful for development environments where custom parameter tuning is not required.
+
+### Disabled instance variant
+
+`module.db_disabled` shows how to use `create_db_instance = false` to prevent resource creation while still defining the module block. This pattern is useful for feature flags or staged rollouts.
+
+## Outputs
+
+After `terraform apply`, the following outputs are available:
+
+| Output | Description |
+|---|---|
+| `db_instance_address` | DNS hostname of the RDS instance |
+| `db_instance_endpoint` | Full connection endpoint including port |
+| `db_instance_identifier` | The RDS instance identifier |
+| `db_instance_engine_version_actual` | The actual engine version running (resolved minor version) |
+| `db_instance_port` | Database port (3306) |
+| `db_instance_name` | The database name |
+| `db_instance_username` | Master username (sensitive) |
+| `db_instance_master_user_secret_arn` | ARN of the Secrets Manager secret for the master password |
+| `db_parameter_group_id` | The parameter group name |
+| `db_parameter_group_arn` | ARN of the parameter group |
+| `db_enhanced_monitoring_iam_role_arn` | ARN of the enhanced monitoring IAM role |
+| `db_instance_cloudwatch_log_groups` | Map of created CloudWatch log group names and ARNs |
+
+## Related guides
+
+<CardGroup cols={2}>
+  <Card title="Parameter groups" href="/guides/parameter-groups">
+    Configure database engine parameters for tuning MySQL behavior.
+  </Card>
+  <Card title="Option groups" href="/guides/option-groups">
+    Add optional engine features such as MARIADB_AUDIT_PLUGIN to MySQL instances.
+  </Card>
+</CardGroup>

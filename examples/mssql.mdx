@@ -1,0 +1,292 @@
+---
+title: "Complete MSSQL example"
+description: "A complete RDS SQL Server Express example with Windows Authentication via AWS Directory Service."
+---
+
+This example provisions a SQL Server Express Edition (sqlserver-ex) RDS instance joined to an AWS Managed Microsoft AD directory for Windows Authentication. It also demonstrates automated backup replication to a second region.
+
+## SQL Server edition identifiers
+
+RDS SQL Server supports four engine identifiers. Choose the one that matches your license and workload requirements:
+
+| Engine | Edition | Notes |
+|---|---|---|
+| `sqlserver-ee` | Enterprise Edition | Maximum feature set, requires BYOL |
+| `sqlserver-se` | Standard Edition | Most production workloads, supports BYOL or license-included |
+| `sqlserver-ex` | Express Edition | Free, max 10 GiB database size, no Multi-AZ |
+| `sqlserver-web` | Web Edition | Web-facing workloads, license-included only |
+
+<Warning>
+  SQL Server Express Edition does not support encryption at rest. Set `storage_encrypted = false` when using `sqlserver-ex`. For production workloads requiring encryption, use `sqlserver-ee` or `sqlserver-se`.
+</Warning>
+
+## Configuration
+
+```hcl main.tf
+provider "aws" {
+  region = local.region
+}
+
+data "aws_availability_zones" "available" {}
+
+locals {
+  name    = "complete-mssql"
+  region  = "eu-west-1"
+  region2 = "eu-central-1"
+
+  vpc_cidr = "10.0.0.0/16"
+  azs      = slice(data.aws_availability_zones.available.names, 0, 3)
+
+  tags = {
+    Name       = local.name
+    Example    = local.name
+    Repository = "https://github.com/terraform-aws-modules/terraform-aws-rds"
+  }
+}
+
+################################################################################
+# RDS Module
+################################################################################
+
+module "db" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = local.name
+
+  engine               = "sqlserver-ex"
+  engine_version       = "15.00"
+  family               = "sqlserver-ex-15.0" # DB parameter group
+  major_engine_version = "15.00"             # DB option group
+  instance_class       = "db.t3.large"
+
+  allocated_storage     = 20
+  max_allocated_storage = 100
+
+  # Encryption at rest is not available for DB instances running SQL Server Express Edition
+  storage_encrypted = false
+
+  username = "complete_mssql"
+  port     = 1433
+
+  domain               = aws_directory_service_directory.demo.id
+  domain_iam_role_name = aws_iam_role.rds_ad_auth.name
+
+  multi_az               = false
+  db_subnet_group_name   = module.vpc.database_subnet_group
+  vpc_security_group_ids = [module.security_group.security_group_id]
+
+  maintenance_window              = "Mon:00:00-Mon:03:00"
+  backup_window                   = "03:00-06:00"
+  enabled_cloudwatch_logs_exports = ["error"]
+  create_cloudwatch_log_group     = true
+
+  backup_retention_period = 1
+  skip_final_snapshot     = true
+  deletion_protection     = false
+
+  performance_insights_enabled          = true
+  performance_insights_retention_period = 7
+  create_monitoring_role                = true
+  monitoring_interval                   = 60
+
+  options                   = []
+  create_db_parameter_group = false
+  license_model             = "license-included"
+  timezone                  = "GMT Standard Time"
+  character_set_name        = "Latin1_General_CI_AS"
+
+  tags = local.tags
+}
+
+module "db_disabled" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = "${local.name}-disabled"
+
+  create_db_instance        = false
+  create_db_parameter_group = false
+  create_db_option_group    = false
+}
+
+################################################################################
+# RDS Automated Backups Replication Module
+################################################################################
+
+provider "aws" {
+  alias  = "region2"
+  region = local.region2
+}
+
+module "db_automated_backups_replication" {
+  source = "terraform-aws-modules/rds/aws//modules/db_instance_automated_backups_replication"
+
+  source_db_instance_arn = module.db.db_instance_arn
+
+  providers = {
+    aws = aws.region2
+  }
+}
+
+################################################################################
+# IAM Role for Windows Authentication
+################################################################################
+
+data "aws_iam_policy_document" "rds_assume_role" {
+  statement {
+    sid = "AssumeRole"
+
+    actions = [
+      "sts:AssumeRole",
+    ]
+
+    principals {
+      type        = "Service"
+      identifiers = ["rds.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "rds_ad_auth" {
+  name                  = "demo-rds-ad-auth"
+  description           = "Role used by RDS for Active Directory authentication and authorization"
+  force_detach_policies = true
+  assume_role_policy    = data.aws_iam_policy_document.rds_assume_role.json
+
+  tags = local.tags
+}
+
+resource "aws_iam_role_policy_attachment" "rds_directory_services" {
+  role       = aws_iam_role.rds_ad_auth.id
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSDirectoryServiceAccess"
+}
+
+################################################################################
+# AWS Directory Service (Active Directory)
+################################################################################
+
+resource "aws_directory_service_directory" "demo" {
+  name     = "corp.demo.com"
+  password = "SuperSecretPassw0rd"
+  edition  = "Standard"
+  type     = "MicrosoftAD"
+
+  vpc_settings {
+    vpc_id = module.vpc.vpc_id
+    # Only 2 subnets, must be in different AZs
+    subnet_ids = slice(tolist(module.vpc.database_subnets), 0, 2)
+  }
+
+  tags = local.tags
+}
+
+################################################################################
+# Supporting Resources
+################################################################################
+
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "~> 6.0"
+
+  name = local.name
+  cidr = local.vpc_cidr
+
+  azs              = local.azs
+  public_subnets   = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k)]
+  private_subnets  = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 3)]
+  database_subnets = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 6)]
+
+  create_database_subnet_group = true
+
+  tags = local.tags
+}
+
+module "security_group" {
+  source  = "terraform-aws-modules/security-group/aws"
+  version = "~> 5.0"
+
+  name        = local.name
+  description = "Complete SqlServer example security group"
+  vpc_id      = module.vpc.vpc_id
+
+  # ingress
+  ingress_with_cidr_blocks = [
+    {
+      from_port   = 1433
+      to_port     = 1433
+      protocol    = "tcp"
+      description = "SqlServer access from within VPC"
+      cidr_blocks = module.vpc.vpc_cidr_block
+    },
+  ]
+
+  # egress
+  egress_with_source_security_group_id = [
+    {
+      from_port                = 0
+      to_port                  = 0
+      protocol                 = -1
+      description              = "Allow outbound communication to Directory Services security group"
+      source_security_group_id = aws_directory_service_directory.demo.security_group_id
+    },
+  ]
+
+  tags = local.tags
+}
+```
+
+## MSSQL-specific configuration
+
+### Engine version format
+
+SQL Server engine versions use the format `"15.00"` (SQL Server 2019), not a single integer. The corresponding `family` value follows the pattern `"sqlserver-ex-15.0"` and `major_engine_version` is `"15.00"`.
+
+### License model
+
+The `license_model` variable controls how you provide SQL Server licenses:
+
+| Value | Description |
+|---|---|
+| `"license-included"` | AWS provides the SQL Server license in the instance pricing. Available for all editions except EE. |
+| `"bring-your-own-license"` | You supply existing SQL Server licenses. Required for Enterprise Edition. |
+
+### Timezone
+
+The `timezone` variable sets the SQL Server instance timezone and **can only be set at creation time**. The value must be a valid Windows timezone identifier such as `"GMT Standard Time"`, `"Eastern Standard Time"`, or `"UTC"`. Changing this after creation requires rebuilding the instance.
+
+### Character set
+
+`character_set_name = "Latin1_General_CI_AS"` sets the SQL Server collation. `CI` means case-insensitive, `AS` means accent-sensitive. This is the default collation for most SQL Server installations. Like the timezone, the collation can only be set at creation time.
+
+### Parameter group
+
+SQL Server Express Edition does not support custom DB parameter groups. The example sets `create_db_parameter_group = false` to skip parameter group creation.
+
+### Windows Authentication (Active Directory)
+
+The example joins the RDS instance to an AWS Managed Microsoft AD directory using:
+
+- `domain` — the Directory Service directory ID
+- `domain_iam_role_name` — an IAM role with the `AmazonRDSDirectoryServiceAccess` managed policy attached
+
+The security group includes an egress rule to the Directory Service security group, which is required for the RDS instance to communicate with the domain controllers. The `aws_directory_service_directory` resource provisions a Standard edition Managed AD at `corp.demo.com`.
+
+### CloudWatch log exports
+
+For SQL Server, the `error` log type exports SQL Server error log entries. Other available log types include `agent` (SQL Server Agent) and `trace`.
+
+## Outputs
+
+| Output | Description |
+|---|---|
+| `db_instance_address` | DNS hostname of the RDS instance |
+| `db_instance_endpoint` | Full connection endpoint including port |
+| `db_instance_identifier` | The RDS instance identifier |
+| `db_instance_engine_version_actual` | The resolved engine version running |
+| `db_instance_port` | Database port (1433) |
+| `db_instance_name` | The database name |
+| `db_instance_username` | Master username (sensitive) |
+| `db_instance_master_user_secret_arn` | ARN of the Secrets Manager secret |
+| `db_instance_domain` | The Directory Service domain ID the instance is joined to |
+| `db_instance_domain_iam_role_name` | Name of the IAM role used for Directory Service API calls |
+| `db_enhanced_monitoring_iam_role_arn` | ARN of the enhanced monitoring IAM role |
+| `db_instance_cloudwatch_log_groups` | Map of CloudWatch log group names and ARNs |

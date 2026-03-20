@@ -1,0 +1,331 @@
+---
+title: 'Read replicas'
+description: 'Create same-region and cross-region read replicas using the replicate_source_db variable.'
+---
+
+Read replicas offload read queries from the primary instance and provide a warm standby that can be promoted in a failover scenario. The module supports same-region and cross-region replicas for MySQL, MariaDB, PostgreSQL, and Oracle.
+
+## How replicas work in this module
+
+Set `replicate_source_db` to the identifier of an existing RDS instance (or its ARN for cross-region). The module passes this value directly to the `aws_db_instance` resource. When a replica is detected, the module automatically:
+
+- Suppresses `engine` (inherited from source)
+- Suppresses `username` (inherited from source)
+- Suppresses `manage_master_user_password` (not supported on replicas)
+
+## Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `replicate_source_db` | `null` | Identifier or ARN of the source DB instance. Setting this marks the instance as a replica. |
+| `replica_mode` | `null` | Oracle-only. `mounted` or `open-read-only` (default). |
+| `upgrade_storage_config` | `null` | Whether to upgrade the storage file system configuration on the replica. Can only be set with `replicate_source_db`. |
+
+## Prerequisites
+
+The source instance must have `backup_retention_period` set to a value greater than `0`. Without automated backups, RDS cannot create a replica.
+
+```hcl
+module "master" {
+  source = "terraform-aws-modules/rds/aws"
+
+  # ...
+
+  # Backups are required in order to create a replica
+  backup_retention_period = 1
+}
+```
+
+## Same-region MySQL replica
+
+The following example is taken from `examples/replica-mysql/main.tf`:
+
+```hcl
+locals {
+  engine                = "mysql"
+  engine_version        = "8.0"
+  family                = "mysql8.0"
+  major_engine_version  = "8.0"
+  instance_class        = "db.t4g.large"
+  allocated_storage     = 20
+  max_allocated_storage = 100
+  port                  = 3306
+}
+
+################################################################################
+# Master DB
+################################################################################
+
+module "master" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = "replica-mysql-master"
+
+  engine               = local.engine
+  engine_version       = local.engine_version
+  family               = local.family
+  major_engine_version = local.major_engine_version
+  instance_class       = local.instance_class
+
+  allocated_storage     = local.allocated_storage
+  max_allocated_storage = local.max_allocated_storage
+
+  db_name  = "replicaMysql"
+  username = "replica_mysql"
+  port     = local.port
+
+  multi_az               = true
+  db_subnet_group_name   = module.vpc.database_subnet_group_name
+  vpc_security_group_ids = [module.security_group.security_group_id]
+
+  maintenance_window              = "Mon:00:00-Mon:03:00"
+  backup_window                   = "03:00-06:00"
+  enabled_cloudwatch_logs_exports = ["general"]
+
+  # Backups are required in order to create a replica
+  backup_retention_period = 1
+  skip_final_snapshot     = true
+  deletion_protection     = false
+
+  tags = local.tags
+}
+
+################################################################################
+# Replica DB
+################################################################################
+
+module "replica" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = "replica-mysql-replica"
+
+  # Source database. For cross-region use db_instance_arn
+  replicate_source_db = module.master.db_instance_identifier
+
+  engine               = local.engine
+  engine_version       = local.engine_version
+  family               = local.family
+  major_engine_version = local.major_engine_version
+  instance_class       = local.instance_class
+
+  allocated_storage     = local.allocated_storage
+  max_allocated_storage = local.max_allocated_storage
+
+  port = local.port
+
+  password_wo         = "UberSecretPassword"
+  password_wo_version = 1
+  # Not supported with replicas
+  manage_master_user_password = false
+
+  multi_az               = false
+  vpc_security_group_ids = [module.security_group.security_group_id]
+
+  maintenance_window              = "Tue:00:00-Tue:03:00"
+  backup_window                   = "03:00-06:00"
+  enabled_cloudwatch_logs_exports = ["general"]
+
+  backup_retention_period = 0
+  skip_final_snapshot     = true
+  deletion_protection     = false
+
+  tags = local.tags
+}
+```
+
+## Same-region PostgreSQL replica
+
+The following example is taken from `examples/replica-postgres/main.tf`:
+
+```hcl
+locals {
+  engine                = "postgres"
+  engine_version        = "17"
+  family                = "postgres17"
+  major_engine_version  = "17"
+  instance_class        = "db.t4g.large"
+  allocated_storage     = 20
+  max_allocated_storage = 100
+  port                  = 5432
+}
+
+module "master" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = "replica-postgresql-master"
+
+  engine               = local.engine
+  engine_version       = local.engine_version
+  family               = local.family
+  major_engine_version = local.major_engine_version
+  instance_class       = local.instance_class
+
+  allocated_storage     = local.allocated_storage
+  max_allocated_storage = local.max_allocated_storage
+
+  db_name  = "replicaPostgresql"
+  username = "replica_postgresql"
+  port     = local.port
+
+  password_wo         = "UberSecretPassword"
+  password_wo_version = 1
+  # Not supported with replicas
+  manage_master_user_password = false
+
+  multi_az               = true
+  db_subnet_group_name   = module.vpc.database_subnet_group_name
+  vpc_security_group_ids = [module.security_group.security_group_id]
+
+  maintenance_window              = "Mon:00:00-Mon:03:00"
+  backup_window                   = "03:00-06:00"
+  enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
+
+  # Backups are required in order to create a replica
+  backup_retention_period = 1
+  skip_final_snapshot     = true
+  deletion_protection     = false
+  storage_encrypted       = false
+
+  tags = local.tags
+}
+
+module "replica" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = "replica-postgresql-replica"
+
+  # Source database. For cross-region use db_instance_arn
+  replicate_source_db = module.master.db_instance_identifier
+
+  engine               = local.engine
+  engine_version       = local.engine_version
+  family               = local.family
+  major_engine_version = local.major_engine_version
+  instance_class       = local.instance_class
+
+  allocated_storage     = local.allocated_storage
+  max_allocated_storage = local.max_allocated_storage
+
+  port = local.port
+
+  multi_az               = false
+  vpc_security_group_ids = [module.security_group.security_group_id]
+
+  maintenance_window              = "Tue:00:00-Tue:03:00"
+  backup_window                   = "03:00-06:00"
+  enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
+
+  backup_retention_period = 0
+  skip_final_snapshot     = true
+  deletion_protection     = false
+  storage_encrypted       = false
+
+  tags = local.tags
+}
+```
+
+## Cross-region replicas
+
+For cross-region replicas, pass the source instance's ARN instead of its identifier. You must also configure a second AWS provider for the target region and specify a `kms_key_id` in the target region if you want encryption:
+
+```hcl
+# Target region KMS key
+module "kms" {
+  source      = "terraform-aws-modules/kms/aws"
+  version     = "~> 1.0"
+  description = "KMS key for cross region automated backups replication"
+
+  aliases                 = ["my-cross-region-rds"]
+  aliases_use_name_prefix = true
+  key_owners              = [data.aws_caller_identity.current.arn]
+
+  providers = {
+    aws = aws.region2
+  }
+}
+
+# Cross-region automated backups replication
+module "db_automated_backups_replication" {
+  source = "terraform-aws-modules/rds/aws//modules/db_instance_automated_backups_replication"
+
+  source_db_instance_arn = module.db.db_instance_arn
+  kms_key_arn            = module.kms.key_arn
+
+  providers = {
+    aws = aws.region2
+  }
+}
+```
+
+For a live cross-region read replica, pass the ARN to `replicate_source_db`:
+
+```hcl
+module "replica" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = "my-cross-region-replica"
+
+  # Use the ARN (not identifier) for cross-region
+  replicate_source_db = module.master.db_instance_arn
+
+  kms_key_id = module.kms.key_arn
+
+  # ... other variables
+
+  providers = {
+    aws = aws.region2
+  }
+}
+```
+
+## Storage upgrade on replicas
+
+When migrating a replica to a new storage configuration (for example, upgrading from `gp2` to `gp3`), set `upgrade_storage_config = true`:
+
+```hcl
+module "replica" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier          = "my-replica"
+  replicate_source_db = module.master.db_instance_identifier
+
+  # Upgrade storage on the replica
+  upgrade_storage_config = true
+
+  storage_type = "gp3"
+  iops         = 3000
+
+  # ... other variables
+}
+```
+
+## Oracle replica mode
+
+Oracle replicas support two modes:
+
+| Mode | Description |
+|---|---|
+| `open-read-only` | Replica is open for read queries (default). |
+| `mounted` | Replica is mounted but not open. Used for disaster recovery standby. |
+
+```hcl
+module "oracle_replica" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier          = "oracle-replica"
+  replicate_source_db = module.oracle_master.db_instance_identifier
+
+  engine         = "oracle-ee"
+  engine_version = "19"
+  instance_class = "db.t3.large"
+  license_model  = "bring-your-own-license"
+
+  replica_mode = "mounted"
+
+  # ... other variables
+}
+```
+
+<Note>
+  `manage_master_user_password` is not supported on read replicas. When configuring a replica, set `manage_master_user_password = false` and use `password_wo` / `password_wo_version` if a password is required.
+</Note>

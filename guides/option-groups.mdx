@@ -1,0 +1,235 @@
+---
+title: 'Option groups'
+description: 'Configure DB option groups for MySQL, Oracle, and SQL Server RDS instances.'
+---
+
+Option groups provide additional features for an Amazon RDS DB instance. Each option is a named feature, such as `MARIADB_AUDIT_PLUGIN` for MySQL or Oracle's `OEM_AGENT`. Not every engine supports option groups.
+
+<Warning>
+  Option groups are **not supported for PostgreSQL**. When `engine = "postgres"`, the module automatically skips option group creation regardless of the `create_db_option_group` setting. Any value set for `option_group_name` is ignored.
+</Warning>
+
+## Supported engines
+
+| Engine | Option groups supported |
+|---|---|
+| MySQL | Yes |
+| MariaDB | Yes |
+| Oracle | Yes |
+| SQL Server | Yes |
+| PostgreSQL | **No** |
+
+## Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `create_db_option_group` | `true` | Whether to create an option group. Set to `false` to reference an existing one or use the AWS default. |
+| `option_group_name` | `null` | Name of the option group to create or reference. Defaults to the instance `identifier`. |
+| `option_group_use_name_prefix` | `true` | When `true`, appends a unique suffix. Set to `false` to use the exact name. |
+| `major_engine_version` | `null` | The major engine version the option group is associated with (e.g., `"8.0"`, `"19"`). Required when creating. |
+| `options` | `null` | List of option objects to configure. |
+| `option_group_description` | `null` | Description for the option group. |
+| `option_group_skip_destroy` | `null` | When `true`, removes the option group from state on destroy without deleting it from AWS. |
+| `option_group_timeouts` | `null` | Override the deletion timeout for the option group resource. |
+
+## The `options` object
+
+Each entry in `options` accepts the following fields, as defined in `variables.tf`:
+
+```hcl
+options = [
+  {
+    option_name                    = string                  # Option identifier (required)
+    port                           = optional(number)        # Override port for this option
+    version                        = optional(string)        # Option version
+    db_security_group_memberships  = optional(list(string))  # Classic security groups
+    vpc_security_group_memberships = optional(list(string))  # VPC security groups
+    option_settings = optional(list(object({                 # Option-specific settings
+      name  = string
+      value = string
+    })))
+  }
+]
+```
+
+## Usage patterns
+
+<Tabs>
+  <Tab title="Create new">
+    The module creates an option group by default. Provide `major_engine_version` and `options` to configure it. The following example adds the `MARIADB_AUDIT_PLUGIN` option to a MySQL 8.0 instance:
+
+    ```hcl
+    module "db" {
+      source = "terraform-aws-modules/rds/aws"
+
+      identifier = "demodb"
+
+      engine            = "mysql"
+      engine_version    = "8.0"
+      instance_class    = "db.t4g.large"
+      allocated_storage = 5
+
+      # Option group
+      major_engine_version = "8.0"
+
+      options = [
+        {
+          option_name = "MARIADB_AUDIT_PLUGIN"
+
+          option_settings = [
+            {
+              name  = "SERVER_AUDIT_EVENTS"
+              value = "CONNECT"
+            },
+            {
+              name  = "SERVER_AUDIT_FILE_ROTATIONS"
+              value = "37"
+            },
+          ]
+        },
+      ]
+
+      # ... other required variables
+    }
+    ```
+
+    To use an exact option group name:
+
+    ```hcl
+    option_group_name            = "prod-instance-mysql-8.0"
+    option_group_use_name_prefix = false
+    ```
+
+    To use a name prefix (the default):
+
+    ```hcl
+    option_group_name = "prod-instance-mysql-8.0"
+    # option_group_use_name_prefix = true (default)
+    ```
+  </Tab>
+
+  <Tab title="Use existing">
+    To reference an option group created outside the module:
+
+    ```hcl
+    module "db" {
+      source = "terraform-aws-modules/rds/aws"
+
+      identifier = "demodb"
+
+      engine            = "mysql"
+      engine_version    = "8.0"
+      instance_class    = "db.t4g.large"
+      allocated_storage = 5
+
+      # Reference existing option group
+      create_db_option_group = false
+      option_group_name      = "prod-instance-mysql-8.0" # must already exist in AWS
+
+      # ... other required variables
+    }
+    ```
+  </Tab>
+
+  <Tab title="AWS default">
+    To use the AWS-managed default option group, disable creation and omit the name:
+
+    ```hcl
+    module "db" {
+      source = "terraform-aws-modules/rds/aws"
+
+      identifier = "demodb"
+
+      engine            = "mysql"
+      engine_version    = "8.0"
+      instance_class    = "db.t4g.large"
+      allocated_storage = 5
+
+      # Use the AWS default option group
+      create_db_option_group = false
+
+      # ... other required variables
+    }
+    ```
+  </Tab>
+
+  <Tab title="Skip (PostgreSQL)">
+    For PostgreSQL, option group creation is automatically skipped. No configuration is needed — even if you set `create_db_option_group = true`, the module ignores it:
+
+    ```hcl
+    module "db" {
+      source = "terraform-aws-modules/rds/aws"
+
+      identifier = "my-postgres"
+
+      engine         = "postgres"
+      engine_version = "17"
+      instance_class = "db.t4g.large"
+
+      # option_group_name here will be ignored
+      # No option group is created or associated
+
+      # ... other required variables
+    }
+    ```
+
+    This behavior is hardcoded in the root `main.tf`:
+
+    ```hcl
+    create_db_option_group = var.create_db_option_group && var.engine != "postgres"
+    ```
+  </Tab>
+</Tabs>
+
+## Oracle option group example
+
+Oracle option groups are commonly used for features like Oracle Enterprise Manager, Transparent Data Encryption, and native network encryption.
+
+```hcl
+module "db" {
+  source = "terraform-aws-modules/rds/aws"
+
+  identifier = "demodb-oracle"
+
+  engine               = "oracle-ee"
+  engine_version       = "19"
+  family               = "oracle-ee-19"
+  major_engine_version = "19"
+  instance_class       = "db.t3.large"
+  license_model        = "bring-your-own-license"
+
+  # Option group will be created automatically
+  # Add options as needed:
+  options = [
+    {
+      option_name = "NATIVE_NETWORK_ENCRYPTION"
+      option_settings = [
+        {
+          name  = "SQLNET.ENCRYPTION_SERVER"
+          value = "REQUIRED"
+        },
+        {
+          name  = "SQLNET.ENCRYPTION_TYPES_SERVER"
+          value = "AES256"
+        },
+      ]
+    },
+  ]
+
+  # ... other required variables
+}
+```
+
+## Deletion timeout
+
+Option group deletion can take several minutes if it is still associated with an instance. You can increase the timeout:
+
+```hcl
+option_group_timeouts = {
+  delete = "15m"
+}
+```
+
+<Tip>
+  Set `option_group_skip_destroy = true` in production environments to prevent the option group from being deleted when you run `terraform destroy`. The resource will be removed from state but will remain in AWS.
+</Tip>

@@ -1,0 +1,182 @@
+---
+title: "db_option_group submodule"
+description: "Reference for the db_option_group submodule, which provisions an aws_db_option_group resource for supported engines."
+---
+
+The `db_option_group` submodule creates an `aws_db_option_group` that can enable additional features for supported RDS engines such as MySQL, Oracle, Microsoft SQL Server, and MariaDB.
+
+<Warning>
+  Option groups are **not applicable to PostgreSQL**. Do not set `create_db_option_group = true` or reference this submodule for PostgreSQL DB instances. PostgreSQL manages engine features through parameter groups instead.
+</Warning>
+
+## Source
+
+```
+./modules/db_option_group
+```
+
+## Usage
+
+Use this submodule standalone to manage an option group independently of the DB instance lifecycle:
+
+```hcl
+module "db_option_group" {
+  source  = "terraform-aws-modules/rds/aws//modules/db_option_group"
+  version = "~> 6.0"
+
+  name                     = "mysql80-audit"
+  use_name_prefix          = false
+  option_group_description = "MySQL 8.0 option group with audit plugin"
+  engine_name              = "mysql"
+  major_engine_version     = "8.0"
+
+  options = [
+    {
+      option_name = "MARIADB_AUDIT_PLUGIN"
+      option_settings = [
+        {
+          name  = "SERVER_AUDIT_EVENTS"
+          value = "CONNECT,QUERY"
+        },
+        {
+          name  = "SERVER_AUDIT_FILE_ROTATIONS"
+          value = "10"
+        },
+      ]
+    },
+  ]
+
+  timeouts = {
+    delete = "15m"
+  }
+
+  tags = {
+    Environment = "production"
+  }
+}
+```
+
+Then reference the output in a DB instance:
+
+```hcl
+module "db" {
+  source  = "terraform-aws-modules/rds/aws"
+  version = "~> 6.0"
+
+  identifier            = "mydb"
+  engine                = "mysql"
+  create_db_option_group = false
+  option_group_name     = module.db_option_group.db_option_group_id
+
+  # ... other variables
+}
+```
+
+## Input variables
+
+<ParamField path="create" type="bool">
+  Whether to create the option group resource.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="name" type="string">
+  The name of the option group. When `use_name_prefix` is `true`, this is used as a prefix.
+
+  Default: `""`
+</ParamField>
+
+<ParamField path="use_name_prefix" type="bool">
+  Determines whether to use `name` as-is or create a unique name beginning with `name` as the prefix.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="option_group_description" type="string">
+  The description of the option group.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="engine_name" type="string">
+  The name of the engine the option group should be associated with (e.g. `mysql`, `oracle-se2`, `sqlserver-ex`, `mariadb`).
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="major_engine_version" type="string">
+  The major version of the engine the option group should be associated with (e.g. `8.0`, `19`, `15.00`).
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="options" type="list(object)">
+  A list of options to enable in the option group.
+
+  Default: `null`
+
+  <Expandable title="Object schema">
+    <ParamField path="option_name" type="string" required>
+      The name of the option (e.g. `MARIADB_AUDIT_PLUGIN`, `OEM`, `S3_INTEGRATION`).
+    </ParamField>
+    <ParamField path="port" type="number">
+      The port used by the option, if applicable.
+    </ParamField>
+    <ParamField path="version" type="string">
+      The version of the option.
+    </ParamField>
+    <ParamField path="db_security_group_memberships" type="list(string)">
+      DB security groups to associate with the option.
+    </ParamField>
+    <ParamField path="vpc_security_group_memberships" type="list(string)">
+      VPC security group IDs to associate with the option.
+    </ParamField>
+    <ParamField path="option_settings" type="list(object)">
+      Key-value settings for the option.
+      <Expandable title="option_settings schema">
+        <ParamField path="name" type="string" required>Setting name.</ParamField>
+        <ParamField path="value" type="string" required>Setting value.</ParamField>
+      </Expandable>
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="skip_destroy" type="bool">
+  Set to `true` to prevent the option group from being deleted at destroy time. The resource is instead just removed from Terraform state. Useful when active DB instances are associated with this option group.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="timeouts" type="object">
+  Maximum timeout for deletion of the `aws_db_option_group` resource.
+
+  Default: `null`
+
+  <Expandable title="Object schema">
+    <ParamField path="delete" type="string">
+      Deletion timeout duration string (e.g. `15m`).
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="region" type="string">
+  Region where the option group will be managed. Defaults to the region set in the provider configuration.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="tags" type="map(string)">
+  A mapping of tags to assign to the option group resource.
+
+  Default: `{}`
+</ParamField>
+
+## Outputs
+
+<ResponseField name="db_option_group_id" type="string">
+  The name (ID) of the DB option group. Pass this to the `option_group_name` input of a DB instance.
+</ResponseField>
+
+<ResponseField name="db_option_group_arn" type="string">
+  The ARN of the DB option group.
+</ResponseField>

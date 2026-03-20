@@ -1,97 +1,85 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "AWS RDS Terraform Module"
+description: "Production-ready Terraform module for creating and managing AWS RDS database instances on AWS"
+mode: "custom"
 ---
 
-## Setting up
+<div style={{background: "linear-gradient(135deg, #594ed8 0%, #040404 100%)", padding: "80px 40px", borderRadius: "12px", marginBottom: "48px", textAlign: "center"}}>
+  <h1 style={{color: "#ffffff", fontSize: "48px", fontWeight: "700", marginBottom: "16px", fontFamily: "Inter, sans-serif"}}>
+    AWS RDS Terraform Module
+  </h1>
+  <p style={{color: "#acacf4", fontSize: "20px", fontWeight: "400", marginBottom: "32px", fontFamily: "Inter, sans-serif", maxWidth: "640px", margin: "0 auto 32px"}}>
+    A battle-tested Terraform module for creating and managing AWS RDS database instances, subnet groups, parameter groups, option groups, and monitoring resources.
+  </p>
+  <div style={{display: "flex", gap: "16px", justifyContent: "center", flexWrap: "wrap"}}>
+    <a href="/quickstart" style={{background: "#594ed8", color: "#ffffff", padding: "12px 28px", borderRadius: "4px", fontWeight: "600", textDecoration: "none", fontFamily: "Inter, sans-serif", border: "2px solid #acacf4"}}>
+      Get Started
+    </a>
+    <a href="/reference/inputs" style={{background: "transparent", color: "#acacf4", padding: "12px 28px", borderRadius: "4px", fontWeight: "600", textDecoration: "none", fontFamily: "Inter, sans-serif", border: "2px solid #acacf4"}}>
+      Reference
+    </a>
+  </div>
+</div>
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Deploy your first RDS instance in minutes with a complete working example.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Engine Guides" icon="database" href="/guides/engines">
+    Configure MySQL, PostgreSQL, Oracle, MSSQL, and MariaDB instances.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Security" icon="shield" href="/guides/security">
+    Encryption, IAM authentication, Secrets Manager password rotation, and VPC isolation.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Monitoring" icon="chart-line" href="/guides/monitoring">
+    Enhanced Monitoring, Performance Insights, and CloudWatch log exports.
   </Card>
-</Columns>
+  <Card title="Read Replicas" icon="copy" href="/guides/replicas">
+    Create read replicas and cross-region replica configurations.
+  </Card>
+  <Card title="Blue/Green Deployments" icon="arrows-rotate" href="/guides/blue-green-deployments">
+    Zero-downtime upgrades and schema changes using RDS Blue/Green deployments.
+  </Card>
+</CardGroup>
 
-## Create beautiful pages
+## Key features
 
-Everything you need to create world-class documentation.
+<CardGroup cols={2}>
+  <Card title="Multi-engine support" icon="layer-group">
+    Supports MySQL, PostgreSQL, Oracle, Microsoft SQL Server, and MariaDB with engine-specific configuration options.
+  </Card>
+  <Card title="Composable submodules" icon="puzzle-piece">
+    Use the root module or individual submodules — `db_instance`, `db_subnet_group`, `db_parameter_group`, `db_option_group` — independently.
+  </Card>
+  <Card title="Secrets Manager integration" icon="key">
+    Automatic master password management and rotation using AWS Secrets Manager with configurable rotation schedules.
+  </Card>
+  <Card title="Storage encryption" icon="lock">
+    Storage encrypted by default with customer-managed KMS key support, provisioned IOPS, gp3 throughput control, and storage autoscaling.
+  </Card>
+  <Card title="High availability" icon="arrows-split-up-and-left">
+    Multi-AZ deployments, automated backups, point-in-time recovery, and S3 import for MySQL.
+  </Card>
+  <Card title="Observability" icon="eye">
+    Enhanced Monitoring with automatic IAM role creation, Performance Insights, and CloudWatch log group management.
+  </Card>
+</CardGroup>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## Module architecture
 
-## Need inspiration?
+The root module composes five submodules that can also be used independently:
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+| Submodule | Description |
+|-----------|-------------|
+| `db_instance` | Core RDS DB instance with all configuration options |
+| `db_subnet_group` | VPC subnet group for DB instance placement |
+| `db_parameter_group` | Engine-specific parameter configuration |
+| `db_option_group` | Optional engine features (MySQL/Oracle/MSSQL) |
+| `db_instance_role_association` | Associate IAM roles with a DB instance |
+
+## Requirements
+
+| Requirement | Version |
+|-------------|---------|
+| Terraform | `>= 1.11.1` |
+| AWS Provider | `>= 6.28` |
