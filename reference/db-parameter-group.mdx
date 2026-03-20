@@ -18,7 +18,7 @@ Use this submodule standalone when you want to share a parameter group across mu
 ```hcl
 module "db_parameter_group" {
   source  = "terraform-aws-modules/rds/aws//modules/db_parameter_group"
-  version = "~> 6.0"
+  version = "~> 7.0"
 
   name            = "mysql80-production"
   use_name_prefix = false
@@ -57,7 +57,7 @@ Then reference the output in a DB instance:
 ```hcl
 module "db" {
   source  = "terraform-aws-modules/rds/aws"
-  version = "~> 6.0"
+  version = "~> 7.0"
 
   identifier                = "mydb"
   create_db_parameter_group = false

@@ -75,7 +75,8 @@
               "reference/db-subnet-group",
               "reference/db-parameter-group",
               "reference/db-option-group",
-              "reference/db-instance-role-association"
+              "reference/db-instance-role-association",
+              "reference/db-instance-automated-backups-replication"
             ]
           }
         ]

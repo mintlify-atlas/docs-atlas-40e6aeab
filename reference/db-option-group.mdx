@@ -22,7 +22,7 @@ Use this submodule standalone to manage an option group independently of the DB 
 ```hcl
 module "db_option_group" {
   source  = "terraform-aws-modules/rds/aws//modules/db_option_group"
-  version = "~> 6.0"
+  version = "~> 7.0"
 
   name                     = "mysql80-audit"
   use_name_prefix          = false
@@ -61,12 +61,12 @@ Then reference the output in a DB instance:
 ```hcl
 module "db" {
   source  = "terraform-aws-modules/rds/aws"
-  version = "~> 6.0"
+  version = "~> 7.0"
 
-  identifier            = "mydb"
-  engine                = "mysql"
+  identifier             = "mydb"
+  engine                 = "mysql"
   create_db_option_group = false
-  option_group_name     = module.db_option_group.db_option_group_id
+  option_group_name      = module.db_option_group.db_option_group_id
 
   # ... other variables
 }

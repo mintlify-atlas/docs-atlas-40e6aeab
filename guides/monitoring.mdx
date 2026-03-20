@@ -68,19 +68,9 @@ The module exposes three independent monitoring layers: Enhanced Monitoring (OS-
 
     ### Bring your own IAM role
 
-    The enhanced-monitoring example shows how to create the role manually and pass its ARN:
+    The enhanced-monitoring example shows how to create the role manually and pass its ARN. When using an externally managed role, set `create_monitoring_role = false` (the default) and provide `monitoring_role_arn`:
 
     ```hcl
-    resource "aws_iam_role" "rds_enhanced_monitoring" {
-      name_prefix        = "rds-enhanced-monitoring-"
-      assume_role_policy = data.aws_iam_policy_document.rds_enhanced_monitoring.json
-    }
-
-    resource "aws_iam_role_policy_attachment" "rds_enhanced_monitoring" {
-      role       = aws_iam_role.rds_enhanced_monitoring.name
-      policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
-    }
-
     data "aws_iam_policy_document" "rds_enhanced_monitoring" {
       statement {
         actions = ["sts:AssumeRole"]
@@ -93,6 +83,16 @@ The module exposes three independent monitoring layers: Enhanced Monitoring (OS-
       }
     }
 
+    resource "aws_iam_role" "rds_enhanced_monitoring" {
+      name_prefix        = "rds-enhanced-monitoring-"
+      assume_role_policy = data.aws_iam_policy_document.rds_enhanced_monitoring.json
+    }
+
+    resource "aws_iam_role_policy_attachment" "rds_enhanced_monitoring" {
+      role       = aws_iam_role.rds_enhanced_monitoring.name
+      policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
+    }
+
     module "db" {
       source = "terraform-aws-modules/rds/aws"
 
@@ -101,12 +101,9 @@ The module exposes three independent monitoring layers: Enhanced Monitoring (OS-
       # ... engine, storage, etc.
 
       # Enhanced Monitoring using an externally managed role
+      # create_monitoring_role = false (default) — do not create a role
       monitoring_interval = 30
       monitoring_role_arn = aws_iam_role.rds_enhanced_monitoring.arn
-
-      # create_monitoring_role = true is also set here so that the module
-      # creates a second role — in practice choose one approach or the other
-      create_monitoring_role = true
 
       tags = local.tags
     }

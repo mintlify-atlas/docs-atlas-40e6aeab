@@ -329,3 +329,9 @@ module "oracle_replica" {
 <Note>
   `manage_master_user_password` is not supported on read replicas. When configuring a replica, set `manage_master_user_password = false` and use `password_wo` / `password_wo_version` if a password is required.
 </Note>
+
+## Automated backups replication
+
+As an alternative to a live cross-region read replica, you can replicate automated backups to another region using the `db_instance_automated_backups_replication` submodule. This creates backup copies in the destination region without provisioning a live standby instance.
+
+See the [db_instance_automated_backups_replication submodule reference](/reference/db-instance-automated-backups-replication) for full documentation and usage examples.

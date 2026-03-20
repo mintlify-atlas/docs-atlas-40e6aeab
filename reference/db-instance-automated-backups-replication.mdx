@@ -1,0 +1,148 @@
+---
+title: "db_instance_automated_backups_replication submodule"
+description: "Reference for the db_instance_automated_backups_replication submodule, which replicates RDS automated backups to a second AWS region."
+---
+
+The `db_instance_automated_backups_replication` submodule enables cross-region replication of automated backups for an RDS DB instance. It creates an `aws_db_instance_automated_backups_replication` resource in the **destination** region that continuously replicates backups from the source region.
+
+This is distinct from a cross-region read replica: automated backups replication does not create a live standby instance — it copies backup data to the destination region so that you can restore a DB instance there in a disaster recovery scenario.
+
+## Source
+
+```
+./modules/db_instance_automated_backups_replication
+```
+
+## Usage
+
+This submodule must be deployed in the **destination** region by configuring an alternate AWS provider:
+
+```hcl main.tf
+provider "aws" {
+  alias  = "primary"
+  region = "eu-west-1"
+}
+
+provider "aws" {
+  alias  = "replica"
+  region = "eu-central-1"
+}
+
+module "db" {
+  source = "terraform-aws-modules/rds/aws"
+
+  providers = {
+    aws = aws.primary
+  }
+
+  identifier = "my-db"
+
+  engine         = "postgres"
+  engine_version = "17"
+  # ...
+
+  # Backups are required for replication
+  backup_retention_period = 1
+}
+
+module "db_automated_backups_replication" {
+  source = "terraform-aws-modules/rds/aws//modules/db_instance_automated_backups_replication"
+
+  # Run in the destination region
+  providers = {
+    aws = aws.replica
+  }
+
+  source_db_instance_arn = module.db.db_instance_arn
+  kms_key_arn            = aws_kms_key.replica_region.arn
+  retention_period       = 14
+}
+```
+
+<Note>
+  The source RDS instance must have `backup_retention_period` set to `1` or greater. Automated backups replication cannot be enabled on an instance with backups disabled.
+</Note>
+
+## Input variables
+
+<ParamField path="source_db_instance_arn" type="string">
+  The ARN of the source DB instance whose automated backups will be replicated to this region.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="kms_key_arn" type="string">
+  The ARN of the KMS encryption key in the **destination** AWS region used to encrypt the replicated backups. If not specified, the default AWS-managed KMS key for RDS is used.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="retention_period" type="number">
+  The number of days to retain the replicated automated backups in the destination region. Must be between `1` and `35`.
+
+  Default: `7`
+</ParamField>
+
+<ParamField path="pre_signed_url" type="string">
+  A pre-signed URL containing a Signature Version 4 signed request for the `StartDBInstanceAutomatedBackupsReplication` action in the source region. Required only when replicating to a region that requires an explicit pre-signed URL.
+
+  Default: `null`
+</ParamField>
+
+<ParamField path="create" type="bool">
+  Whether to create the automated backups replication resource. Set to `false` to skip creation.
+
+  Default: `true`
+</ParamField>
+
+<ParamField path="region" type="string">
+  Region where this resource will be managed. Defaults to the region set in the provider configuration.
+
+  Default: `null`
+</ParamField>
+
+## Complete example
+
+The `examples/complete-postgres/` and `examples/cross-region-replica-postgres/` examples show this submodule used alongside a KMS module:
+
+```hcl main.tf
+data "aws_caller_identity" "current" {}
+
+module "kms" {
+  source  = "terraform-aws-modules/kms/aws"
+  version = "~> 1.0"
+
+  description = "KMS key for cross region automated backups replication"
+
+  aliases                 = ["my-cross-region-rds"]
+  aliases_use_name_prefix = true
+  key_owners              = [data.aws_caller_identity.current.arn]
+
+  providers = {
+    aws = aws.replica_region
+  }
+}
+
+module "db_automated_backups_replication" {
+  source = "terraform-aws-modules/rds/aws//modules/db_instance_automated_backups_replication"
+
+  source_db_instance_arn = module.db.db_instance_arn
+  kms_key_arn            = module.kms.key_arn
+
+  providers = {
+    aws = aws.replica_region
+  }
+}
+```
+
+## Relationship to cross-region read replicas
+
+| Feature | Automated Backups Replication | Cross-Region Read Replica |
+|---|---|---|
+| What it creates | Backup copies in another region | A live RDS instance in another region |
+| Source | Any RDS instance with backups enabled | An RDS instance |
+| Cost | Storage cost for backup data | Full instance + storage cost |
+| Restore | Must manually restore from backup | Can promote replica to primary |
+| Use case | Disaster recovery (RPO) | Read scaling + DR (lower RTO) |
+
+See the [read replicas guide](/guides/replicas) for documentation on cross-region live replicas.

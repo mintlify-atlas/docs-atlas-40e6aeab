@@ -18,7 +18,7 @@ Use this submodule standalone when you want to manage a subnet group separately 
 ```hcl
 module "db_subnet_group" {
   source  = "terraform-aws-modules/rds/aws//modules/db_subnet_group"
-  version = "~> 6.0"
+  version = "~> 7.0"
 
   name            = "my-db-subnet-group"
   use_name_prefix = false
@@ -37,7 +37,7 @@ Then reference the output in a DB instance:
 ```hcl
 module "db" {
   source  = "terraform-aws-modules/rds/aws"
-  version = "~> 6.0"
+  version = "~> 7.0"
 
   identifier             = "mydb"
   create_db_subnet_group = false

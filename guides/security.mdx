@@ -40,7 +40,7 @@ When `manage_master_user_password = true`:
 - RDS stores the password in Secrets Manager.
 - Rotation is handled by RDS (default schedule).
 - You do not provide `password_wo`.
-- Replicas and blue/green deployments do not support this — set it to `false` for those cases.
+- Read replicas and Blue/Green deployments do not support `manage_master_user_password`. Set it to `false` and use `password_wo` / `password_wo_version` for those cases.
 
 ### Variables
 
